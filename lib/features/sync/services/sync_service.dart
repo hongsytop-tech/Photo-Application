@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:photo_application/core/db/app_database.dart';
 import 'package:photo_application/core/supabase/supabase_service.dart';
+import 'package:photo_application/features/sync/services/sync_remote.dart';
 
 /// 로컬 테이블 하나와 서버 테이블 하나를 짝지은 명세.
 ///
@@ -54,9 +55,10 @@ class SyncResult {
 /// 않고 `deleted = 1` 로 남겨 두기 때문에, 한쪽에서 지운 항목이 다른 쪽의
 /// 오래된 사본 때문에 되살아나지 않습니다.
 class SyncService {
-  SyncService(this._database);
+  SyncService(this._database, this._remote);
 
   final AppDatabase _database;
+  final SyncRemote _remote;
 
   static const _pushWatermarkKey = 'last_push_ms';
 
@@ -112,13 +114,18 @@ class SyncService {
       SupabaseService.isConfigured && SupabaseService.isAuthenticated;
 
   /// 내려받고 올려보냅니다. 로그인하지 않았으면 조용히 아무것도 하지 않습니다.
-  Future<SyncResult> sync() async {
-    if (!canSync) return const SyncResult();
-    final userId = SupabaseService.currentUser!.id;
+  /// [asUserId] 를 주면 로그인 상태를 보지 않고 그 사용자로 동기화합니다.
+  /// 테스트에서 두 기기를 흉내 낼 때 씁니다.
+  Future<SyncResult> sync({String? asUserId}) async {
+    final userId = asUserId ?? (canSync ? SupabaseService.currentUser!.id : null);
+    if (userId == null) return const SyncResult();
 
     // 내려받기를 먼저 합니다. 이 기기의 오래된 내용으로 다른 기기의 최신
     // 내용을 덮어쓰는 일을 막기 위해서입니다.
     final pulled = await _pullAll(userId);
+    // 두 기기가 서로 모르는 채 같은 이름의 태그를 만들면 합친 뒤에 "바다"가
+    // 두 개가 됩니다. 로컬에서는 ensure() 가 막지만 병합은 막지 못합니다.
+    await _mergeDuplicateTags();
     final pushed = await _pushAll(userId);
 
     debugPrint('동기화 완료: 내려받음 $pulled건, 올려보냄 $pushed건');
@@ -141,11 +148,7 @@ class SyncService {
   /// 조금 뒤처진 시계를 가진 기기가 쓴 행은 워터마크 방식에서 영원히
   /// 건너뛰어질 수 있습니다. 메타데이터는 양이 작아 전부 받아도 부담이 없습니다.
   Future<int> _pull(_TableSpec spec, String userId) async {
-    final rows = await SupabaseService.client
-        .from(spec.remote)
-        .select()
-        .eq('user_id', userId);
-
+    final rows = await _remote.fetchAll(spec.remote, userId);
     if (rows.isEmpty) return 0;
 
     var applied = 0;
@@ -185,6 +188,79 @@ class SyncService {
     return applied;
   }
 
+  /// 이름이 같은 태그를 하나로 합칩니다.
+  ///
+  /// 기기 A 와 B 가 서로 동기화하기 전에 각각 "바다" 태그를 만들면 id 가 달라
+  /// 병합 후 목록에 "바다"가 두 개 남습니다. 로컬에서는 ensure() 가 같은 이름을
+  /// 재사용해 막지만, 서버에서 내려온 것까지는 막지 못합니다.
+  ///
+  /// 승자는 **id 가 사전순으로 가장 앞선 것**으로 정합니다. 임의로 고르면 두
+  /// 기기가 서로 다른 승자를 밀어 영원히 왔다 갔다 하므로, 어느 기기에서 돌려도
+  /// 같은 답이 나오는 기준이어야 합니다.
+  Future<void> _mergeDuplicateTags() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+
+    final rows = await _database.db.rawQuery(
+      'SELECT id, name FROM tags WHERE deleted = 0 ORDER BY id ASC',
+    );
+
+    final byName = <String, List<String>>{};
+    for (final row in rows) {
+      final name = ((row['name'] as String?) ?? '').trim().toLowerCase();
+      if (name.isEmpty) continue;
+      byName.putIfAbsent(name, () => []).add(row['id'] as String);
+    }
+
+    final duplicates = byName.values.where((ids) => ids.length > 1).toList();
+    if (duplicates.isEmpty) return;
+
+    await _database.db.transaction((txn) async {
+      for (final ids in duplicates) {
+        final winner = ids.first;
+        for (final loser in ids.skip(1)) {
+          // 진 태그가 달려 있던 사진들을 이긴 태그로 옮깁니다.
+          final links = await txn.query(
+            'photo_tags',
+            columns: ['photo_key'],
+            where: 'tag_id = ? AND deleted = 0',
+            whereArgs: [loser],
+          );
+          for (final link in links) {
+            final photoKey = link['photo_key'] as String;
+            await txn.insert(
+              'photo_tags',
+              {
+                'photo_key': photoKey,
+                'tag_id': winner,
+                'updated_ms': now,
+                'deleted': 0,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+            await txn.insert(
+              'photo_tags',
+              {
+                'photo_key': photoKey,
+                'tag_id': loser,
+                'updated_ms': now,
+                'deleted': 1,
+              },
+              conflictAlgorithm: ConflictAlgorithm.replace,
+            );
+          }
+          await txn.update(
+            'tags',
+            {'deleted': 1, 'updated_ms': now},
+            where: 'id = ?',
+            whereArgs: [loser],
+          );
+        }
+      }
+    });
+
+    debugPrint('같은 이름 태그 ${duplicates.length}건 병합');
+  }
+
   // --- 올려보내기 ---------------------------------------------------------
 
   Future<int> _pushAll(String userId) async {
@@ -218,17 +294,7 @@ class SyncService {
         .map((row) => <String, dynamic>{'user_id': userId, ...row})
         .toList();
 
-    // 한 번에 너무 많이 보내면 요청이 거부될 수 있어 나눠 보냅니다.
-    const chunkSize = 500;
-    for (var i = 0; i < payload.length; i += chunkSize) {
-      final chunk = payload.sublist(
-        i,
-        i + chunkSize > payload.length ? payload.length : i + chunkSize,
-      );
-      await SupabaseService.client
-          .from(spec.remote)
-          .upsert(chunk, onConflict: spec.onConflict);
-    }
+    await _remote.upsert(spec.remote, payload, onConflict: spec.onConflict);
     return payload.length;
   }
 

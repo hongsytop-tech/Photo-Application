@@ -1,0 +1,250 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'package:photo_application/core/db/app_database.dart';
+import 'package:photo_application/features/folders/services/folder_service.dart';
+import 'package:photo_application/features/notes/services/note_service.dart';
+import 'package:photo_application/features/sync/services/sync_remote.dart';
+import 'package:photo_application/features/sync/services/sync_service.dart';
+import 'package:photo_application/features/tags/services/tag_service.dart';
+
+/// 네트워크 없이 서버를 흉내 내는 저장소.
+///
+/// 실제 Supabase 처럼 (user_id + 자연키) 로 행을 덮어씁니다. 두 "기기"가 같은
+/// 인스턴스를 공유하게 해서 한쪽의 변경이 다른 쪽에 어떻게 도달하는지 봅니다.
+class FakeRemote implements SyncRemote {
+  final Map<String, Map<String, Map<String, dynamic>>> tables = {};
+
+  int get rowCount =>
+      tables.values.fold(0, (sum, rows) => sum + rows.length);
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAll(String table, String userId) async {
+    return (tables[table] ?? {})
+        .values
+        .where((row) => row['user_id'] == userId)
+        .map(Map<String, dynamic>.from)
+        .toList();
+  }
+
+  @override
+  Future<void> upsert(
+    String table,
+    List<Map<String, dynamic>> rows, {
+    required String onConflict,
+  }) async {
+    final keys = onConflict.split(',');
+    final store = tables.putIfAbsent(table, () => {});
+    for (final row in rows) {
+      final id = keys.map((k) => '${row[k]}').join('|');
+      store[id] = Map<String, dynamic>.from(row);
+    }
+  }
+}
+
+/// 한 대의 기기 — 자기 로컬 DB 와 서비스들을 들고 있습니다.
+class Device {
+  Device(this.db, this.remote)
+      : notes = NoteService(db),
+        tags = TagService(db),
+        folders = FolderService(db),
+        sync = SyncService(db, remote);
+
+  final AppDatabase db;
+  final FakeRemote remote;
+  final NoteService notes;
+  final TagService tags;
+  final FolderService folders;
+  final SyncService sync;
+
+  static Future<Device> create(FakeRemote remote) async =>
+      Device(await AppDatabase.openAt(inMemoryDatabasePath), remote);
+
+  /// 갤러리 스캔이 넣었을 법한 사진 한 장.
+  Future<void> addPhoto(String assetId, String photoKey) => db.db.insert('photos', {
+        'asset_id': assetId,
+        'photo_key': photoKey,
+        'file_name': 'IMG.jpg',
+        'created_ms': 1000,
+        'width': 100,
+        'height': 100,
+        'seen_gen': 1,
+      });
+
+  Future<void> run() => sync.sync(asUserId: 'user-1');
+
+  Future<void> close() => db.db.close();
+}
+
+void main() {
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+
+  late FakeRemote remote;
+  late Device a;
+  late Device b;
+
+  setUp(() async {
+    remote = FakeRemote();
+    a = await Device.create(remote);
+    b = await Device.create(remote);
+  });
+
+  tearDown(() async {
+    await a.close();
+    await b.close();
+  });
+
+  test('사진 원본은 서버로 올라가지 않는다', () async {
+    await a.addPhoto('a1', 'k1');
+    await a.notes.write('k1', '메모');
+    await a.run();
+
+    // photos 테이블에 해당하는 서버 테이블이 아예 없어야 합니다.
+    expect(remote.tables.keys, isNot(contains('photos')));
+    expect(remote.tables.keys, everyElement(startsWith('photo_')));
+    expect(remote.tables['photo_notes'], isNotNull);
+  });
+
+  test('한쪽에서 쓴 메모가 다른 쪽에 도착한다', () async {
+    await a.addPhoto('a1', 'k1');
+    await b.addPhoto('b1', 'k1'); // 같은 사진, 기기별로 asset id 는 다름
+    await a.notes.write('k1', '제주도에서');
+    await a.run();
+
+    expect(await b.notes.read('k1'), isNull);
+    await b.run();
+    expect((await b.notes.read('k1'))?.body, '제주도에서');
+  });
+
+  test('나중에 고친 쪽이 이긴다', () async {
+    await a.addPhoto('a1', 'k1');
+    await b.addPhoto('b1', 'k1');
+
+    await a.notes.write('k1', '먼저 쓴 메모');
+    await a.run();
+    await b.run();
+
+    // B 가 나중에 고침
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await b.notes.write('k1', '나중에 고친 메모');
+    await b.run();
+    await a.run();
+
+    expect((await a.notes.read('k1'))?.body, '나중에 고친 메모');
+    expect((await b.notes.read('k1'))?.body, '나중에 고친 메모');
+  });
+
+  test('한쪽에서 지운 메모가 다른 쪽의 오래된 사본 때문에 되살아나지 않는다', () async {
+    await a.addPhoto('a1', 'k1');
+    await b.addPhoto('b1', 'k1');
+
+    await a.notes.write('k1', '지워질 메모');
+    await a.run();
+    await b.run();
+    expect((await b.notes.read('k1'))?.body, '지워질 메모');
+
+    // A 에서 삭제
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await a.notes.delete('k1');
+    await a.run();
+
+    // B 가 동기화하면 삭제가 반영되어야 합니다.
+    await b.run();
+    expect(await b.notes.read('k1'), isNull);
+
+    // 그리고 B 가 다시 올려도 A 에서 되살아나면 안 됩니다.
+    await b.run();
+    await a.run();
+    expect(await a.notes.read('k1'), isNull);
+  });
+
+  test('태그와 폴더도 함께 건너간다', () async {
+    await a.addPhoto('a1', 'k1');
+    await b.addPhoto('b1', 'k1');
+
+    final tag = await a.tags.ensure('바다');
+    await a.tags.attach('k1', tag.id);
+    final folder = await a.folders.create('여행');
+    await a.folders.add(folder.id, 'k1');
+    await a.run();
+    await b.run();
+
+    expect((await b.tags.tagsOf('k1')).map((t) => t.name), ['바다']);
+    expect((await b.folders.listAll()).single.name, '여행');
+    expect(await b.folders.countUnassigned(), 0);
+  });
+
+  test('두 기기가 따로 만든 같은 이름 태그는 하나로 합쳐진다', () async {
+    await a.addPhoto('a1', 'k1');
+    await b.addPhoto('b1', 'k2');
+
+    // 서로 모르는 채 각자 "바다" 를 만듦 → id 가 다름
+    final tagA = await a.tags.ensure('바다');
+    await a.tags.attach('k1', tagA.id);
+    final tagB = await b.tags.ensure('바다');
+    await b.tags.attach('k2', tagB.id);
+    expect(tagA.id, isNot(tagB.id));
+
+    await a.run();
+    await b.run();
+    await a.run();
+    await b.run();
+
+    // 양쪽 모두 "바다" 가 하나만 남고, 두 사진 모두 그 태그를 가져야 합니다.
+    for (final device in [a, b]) {
+      final names = (await device.tags.listAll()).map((t) => t.name).toList();
+      expect(names, ['바다'], reason: '기기마다 태그 목록이 달라지면 안 됩니다');
+      expect((await device.tags.tagsOf('k1')).length, 1);
+      expect((await device.tags.tagsOf('k2')).length, 1);
+    }
+
+    // 두 기기가 고른 승자가 같아야 합니다 (다르면 영원히 서로 밀어냅니다).
+    expect(
+      (await a.tags.listAll()).single.id,
+      (await b.tags.listAll()).single.id,
+    );
+  });
+
+  test('바뀐 것이 없으면 다시 올려보내지 않는다', () async {
+    await a.addPhoto('a1', 'k1');
+    await a.notes.write('k1', '메모');
+
+    final first = await a.sync.sync(asUserId: 'user-1');
+    expect(first.pushed, greaterThan(0));
+
+    final second = await a.sync.sync(asUserId: 'user-1');
+    expect(second.pushed, 0, reason: '워터마크가 동작해야 합니다');
+  });
+
+  test('메타데이터가 붙은 사진의 신원 정보만 올라간다', () async {
+    // 사진 3장 중 1장에만 메모를 붙입니다.
+    for (var i = 0; i < 3; i++) {
+      await a.addPhoto('a$i', 'k$i');
+      await a.db.db.insert('photo_identity', {
+        'photo_key': 'k$i',
+        'file_name': 'IMG_$i.jpg',
+        'created_ms': 1000 + i,
+        'width': 100,
+        'height': 100,
+        'updated_ms': 1,
+        'deleted': 0,
+      });
+    }
+    await a.notes.write('k1', '메모');
+    await a.run();
+
+    final identities = await remote.fetchAll('photo_identities', 'user-1');
+    expect(identities.map((r) => r['photo_key']), ['k1'],
+        reason: '기기의 사진 전부를 올리면 수만 건이 됩니다');
+  });
+
+  test('로그아웃 상태에서는 아무것도 하지 않는다', () async {
+    await a.addPhoto('a1', 'k1');
+    await a.notes.write('k1', '메모');
+
+    final result = await a.sync.sync(); // asUserId 없음 = 로그인 안 됨
+    expect(result.isEmpty, isTrue);
+    expect(remote.rowCount, 0);
+  });
+}

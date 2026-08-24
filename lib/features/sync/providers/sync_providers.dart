@@ -2,10 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:photo_application/core/providers/core_providers.dart';
+import 'package:photo_application/features/sync/services/sync_remote.dart';
 import 'package:photo_application/features/sync/services/sync_service.dart';
 
 final syncServiceProvider = Provider<SyncService>(
-  (ref) => SyncService(ref.watch(appDatabaseProvider)),
+  (ref) => SyncService(ref.watch(appDatabaseProvider), const SupabaseSyncRemote()),
 );
 
 enum SyncPhase { idle, running, done, error }
