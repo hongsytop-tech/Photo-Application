@@ -148,12 +148,40 @@ if [ "$SECRETS_OK" = "1" ]; then
   gh secret list --repo "$REPO" | grep -E 'ANDROID_' || true
 else
   printf '%s' "$B64" > keystore.base64.txt
+
+  # 웹 UI 에 붙여 넣을 값 네 개를 이름표와 함께 한 파일에 모아 둡니다.
+  # base64 덩어리와 비밀번호를 따로 찾아 헤매지 않도록 하려는 것입니다.
+  {
+    echo "# GitHub 저장소 → Settings → Secrets and variables → Actions"
+    echo "# → New repository secret 에서 아래 4개를 그대로 등록하세요."
+    echo "# 이름은 대소문자까지 정확히 같아야 합니다."
+    echo "#"
+    echo "# 등록이 끝나면 이 파일과 keystore.base64.txt 는 지워도 됩니다."
+    echo "# 단, upload-keystore.jks 와 비밀번호는 반드시 따로 보관하세요."
+    echo
+    echo "=== 1) ANDROID_KEYSTORE_PASSWORD ==="
+    echo "$PW"
+    echo
+    echo "=== 2) ANDROID_KEY_PASSWORD ==="
+    echo "$PW"
+    echo
+    echo "=== 3) ANDROID_KEY_ALIAS ==="
+    echo "$ALIAS"
+    echo
+    echo "=== 4) ANDROID_KEYSTORE_BASE64 ==="
+    echo "# 아래 한 줄 전체 (매우 깁니다). keystore.base64.txt 와 같은 내용입니다."
+    echo "$B64"
+  } > keystore-secrets.txt
+
   cat <<MSG
 
 ⚠️  시크릿 자동 등록에 실패했습니다. keystore 자체는 정상적으로 만들어졌습니다.
 
+  등록할 값 4개를 keystore-secrets.txt 에 모아 두었습니다. 웹에서 직접
+  등록하시려면 그 파일만 열면 됩니다.
+
   Codespaces 가 기본으로 주는 토큰은 권한이 좁은 통합(GitHub App) 토큰이라
-  시크릿을 쓸 수 없습니다. `gh auth refresh` 로는 해결되지 않습니다 — 환경변수
+  시크릿을 쓸 수 없습니다. gh auth refresh 로는 해결되지 않습니다 — 환경변수
   토큰을 쓰는 중에는 그 명령이 동작하지 않기 때문입니다. 환경변수를 걷어내고
   내 계정으로 다시 로그인해야 합니다.
 
@@ -168,12 +196,8 @@ else
 
   방법 2 — 웹에서 직접 등록
 
+    keystore-secrets.txt 를 열어 4개를 순서대로 옮겨 담으세요.
     $REPO → Settings → Secrets and variables → Actions → New repository secret
-
-      ANDROID_KEYSTORE_BASE64    keystore.base64.txt 파일의 내용 전체
-      ANDROID_KEYSTORE_PASSWORD  $PW
-      ANDROID_KEY_ALIAS          $ALIAS
-      ANDROID_KEY_PASSWORD       $PW
 
 MSG
 fi
