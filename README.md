@@ -35,26 +35,75 @@ CPU 를 모르겠으면 `photo-universal-*.apk` 를 받으면 됩니다.
 ### keystore 를 한 번만 설정해 두세요 (권장)
 
 설정하지 않아도 APK 는 나오지만, 빌드마다 서명 키가 달라져 **기존 앱 위에
-덮어쓰기 설치가 안 됩니다**(매번 지우고 새로 깔아야 하고, 그때 앱 데이터도
+덮어쓰기 설치가 안 됩니다**(매번 지우고 새로 깔아야 하고, 그때 메모·태그·폴더도
 사라집니다). 한 번만 해두면 됩니다.
+
+**내 컴퓨터에 아무것도 깔지 않고 GitHub Codespaces 안에서 끝낼 수 있습니다.**
+
+1. 저장소 페이지에서 초록색 **Code** 버튼 → **Codespaces** 탭 →
+   **Create codespace on ...** 를 누릅니다. 브라우저에 VS Code 가 열리고,
+   준비가 끝나면 터미널 아래에 "✅ 준비 완료" 가 뜹니다 (첫 실행은 몇 분 걸립니다).
+
+2. 터미널에 이걸 붙여 넣습니다:
+
+   ```bash
+   bash scripts/setup_keystore.sh
+   ```
+
+   비밀번호를 물어보는데 **그냥 엔터를 누르면 안전한 비밀번호를 자동으로
+   만들어 줍니다.** 스크립트가 서명키를 만들고 GitHub 시크릿 4개까지 대신
+   등록합니다.
+
+3. 스크립트가 시키는 대로 **`upload-keystore.jks` 파일을 내려받아 보관**하세요.
+   VS Code 왼쪽 파일 목록에서 파일을 오른쪽 클릭 → **Download**.
+   자동 생성된 비밀번호도 함께 적어 두세요.
+
+   > Codespace 는 지워질 수 있는 임시 공간입니다. 이 파일을 잃으면 같은 서명으로
+   > 업데이트할 방법이 영영 없습니다. 클라우드 드라이브나 비밀번호 관리자에
+   > 넣어 두세요. (`.gitignore` 에 들어 있어 저장소에는 올라가지 않습니다.)
+
+4. 다음 빌드부터 적용됩니다. 바로 확인하려면 터미널에서:
+
+   ```bash
+   gh workflow run build-apk.yml
+   ```
+
+   Actions 로그의 "서명 keystore 준비" 단계에 경고 대신
+   `✅ 업로드 keystore 로 서명합니다.` 가 뜨면 성공입니다.
+
+시크릿 자동 등록이 권한 문제로 실패하면 스크립트가 `gh auth refresh` 명령과
+수동 등록 방법을 함께 알려 줍니다.
+
+<details>
+<summary>Codespaces 대신 내 컴퓨터에서 하려면</summary>
+
+JDK 가 필요합니다 (Android Studio 가 있으면 이미 있습니다).
 
 ```bash
 keytool -genkey -v -keystore upload-keystore.jks \
   -keyalg RSA -keysize 2048 -validity 10000 -alias upload
-base64 -w0 upload-keystore.jks   # 이 출력을 통째로 복사
+base64 -w0 upload-keystore.jks     # Mac: base64 -i upload-keystore.jks | tr -d '\n'
 ```
 
-저장소 **Settings → Secrets and variables → Actions** 에 등록:
+**Settings → Secrets and variables → Actions** 에서 시크릿 4개를 등록합니다:
+`ANDROID_KEYSTORE_BASE64`(위 출력 전체), `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`(`upload`), `ANDROID_KEY_PASSWORD`.
 
-| 시크릿 | 값 |
-| --- | --- |
-| `ANDROID_KEYSTORE_BASE64` | 위 base64 출력 |
-| `ANDROID_KEYSTORE_PASSWORD` | keystore 비밀번호 |
-| `ANDROID_KEY_ALIAS` | `upload` |
-| `ANDROID_KEY_PASSWORD` | 키 비밀번호 |
+</details>
 
-> `upload-keystore.jks` 원본은 안전한 곳에 보관하세요. 잃어버리면 같은 서명으로
-> 업데이트할 수 없습니다.
+## Codespaces 에서 코드 확인하기
+
+`.devcontainer` 가 있어 Codespace 를 열면 Flutter 가 자동으로 깔립니다.
+CI 를 기다리지 않고 바로 확인할 수 있습니다:
+
+```bash
+flutter analyze --no-fatal-infos   # CI 와 같은 기준
+flutter test                       # 데이터 계층 테스트
+```
+
+APK 빌드와 실기기 실행은 Codespaces 에서 하지 않습니다. 안드로이드 SDK 를
+얹으면 컨테이너가 몇 GB 로 불어나고 준비 시간이 길어져서, 그 일은 GitHub
+Actions 에 맡깁니다.
 
 ## 기기 간 동기화 (선택)
 

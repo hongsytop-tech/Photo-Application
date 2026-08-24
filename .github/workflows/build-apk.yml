@@ -94,8 +94,13 @@ jobs:
       - run: flutter pub get
 
       # 컴파일 에러·경고를 빌드보다 먼저, 더 읽기 쉬운 형태로 잡습니다.
+      #
+      # --no-fatal-infos: 오류와 경고에서는 그대로 실패하되 info 는 통과시킵니다.
+      # info 의 대부분은 서드파티 API 의 deprecation 이라, Flutter 나 패키지가
+      # 새 버전을 낼 때마다 우리 코드가 그대로인데도 APK 빌드가 막힙니다.
+      # 릴리스를 세우는 기준으로 삼기에는 맞지 않습니다.
       - name: 정적 분석
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: 테스트
         run: flutter test

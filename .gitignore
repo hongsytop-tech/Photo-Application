@@ -15,6 +15,7 @@ pubspec.lock
 android/key.properties
 *.jks
 *.keystore
+keystore.base64.txt
 
 # 생성되는 플랫폼 폴더 (android/ 는 손으로 작성해 커밋합니다)
 ios/
