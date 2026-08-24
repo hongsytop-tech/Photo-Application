@@ -1,0 +1,53 @@
+name: photo_application
+description: "폰에 저장된 사진에 메모·태그·가상 폴더를 붙여 관리하는 Android 앱."
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Routing
+  go_router: ^14.2.0
+
+  # 기기 갤러리 접근 (MediaStore) + 썸네일 ImageProvider
+  photo_manager: ^3.2.0
+  photo_manager_image_provider: ^2.1.0
+
+  # 메타데이터 저장소 — 사진 수만 장 규모라 SharedPreferences 대신 SQLite.
+  sqflite: ^2.3.3
+  path: ^1.9.0
+
+  # 사진 식별키(sha1) 계산
+  crypto: ^3.0.3
+
+  # 설정값 전용 로컬 저장 (DB 를 쓸 만큼 무겁지 않은 값들)
+  shared_preferences: ^2.2.3
+
+  # 런타임 설정
+  flutter_dotenv: ^5.1.0
+
+  # 백엔드 (메타데이터 동기화 전용)
+  # 상한 고정: 2.15.0+ 는 passkeys 의존성을 끌어와 빌드가 깨진 전례가 있음.
+  supabase_flutter: ">=2.5.6 <2.15.0"
+
+  uuid: ^4.4.0
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env

@@ -1,0 +1,35 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+
+# 런타임 시크릿
+.env
+
+# Android 서명키 — 절대 커밋 금지
+android/key.properties
+*.jks
+*.keystore
+
+# 생성되는 플랫폼 폴더 (android/ 는 손으로 작성해 커밋합니다)
+ios/
+web/
+linux/
+macos/
+windows/
+android/.gradle/
+android/local.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
