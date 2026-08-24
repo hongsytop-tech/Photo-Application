@@ -29,7 +29,6 @@ class FolderPickerSheet extends ConsumerStatefulWidget {
 class _FolderPickerSheetState extends ConsumerState<FolderPickerSheet> {
   final _newFolder = TextEditingController();
   Set<String> _checked = {};
-  Set<String> _initial = {};
   bool _ready = false;
 
   bool get _isSingle => widget.photoKeys.length == 1;
@@ -53,7 +52,6 @@ class _FolderPickerSheetState extends ConsumerState<FolderPickerSheet> {
           .folderIdsOf(widget.photoKeys.first);
       if (!mounted) return;
       setState(() {
-        _initial = ids;
         _checked = {...ids};
         _ready = true;
       });

@@ -146,13 +146,11 @@ class SyncService {
         .select()
         .eq('user_id', userId);
 
-    if (rows is! List || rows.isEmpty) return 0;
+    if (rows.isEmpty) return 0;
 
     var applied = 0;
     await _database.db.transaction((txn) async {
-      for (final raw in rows) {
-        if (raw is! Map) continue;
-        final remote = raw.cast<String, dynamic>();
+      for (final remote in rows) {
 
         final whereClause = spec.keys.map((k) => '$k = ?').join(' AND ');
         final whereArgs = spec.keys.map((k) => remote[k]).toList();

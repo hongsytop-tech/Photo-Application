@@ -104,10 +104,11 @@ class _NoteEditScreenState extends ConsumerState<NoteEditScreen> {
     // 내용이 날아가면 안 됩니다.
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        await _save();
-        if (mounted) Navigator.of(context).pop();
+      onPopInvokedWithResult: (didPop, _) {
+        // _saveAndClose 안의 context 는 State.context 라서 mounted 검사와
+        // 짝이 맞습니다. 여기 build 파라미터 context 를 쓰면 분석기가
+        // "관계없는 mounted 검사"로 잡습니다.
+        if (!didPop) _saveAndClose();
       },
       child: Scaffold(
         appBar: AppBar(

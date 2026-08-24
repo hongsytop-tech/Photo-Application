@@ -52,12 +52,20 @@ jobs:
       # flutter create 가 우리 소스를 덮어쓰지 않았는지 확인합니다.
       # --platforms 를 준 기존 프로젝트에서는 플랫폼 폴더만 추가되는 것이
       # 정상이지만, 조용히 깨지면 알아채기 어려운 종류의 사고라 못을 박습니다.
-      - name: 소스가 그대로인지 확인
+      - name: 소스 확인 + 템플릿 잔재 제거
         run: |
           grep -q 'PhotoApp' lib/main.dart \
             || { echo "❌ lib/main.dart 가 템플릿으로 덮어써졌습니다."; exit 1; }
           test -f lib/core/db/app_database.dart \
             || { echo "❌ 소스 트리가 손상되었습니다."; exit 1; }
+
+          # flutter create 는 test/widget_test.dart 를 새로 만든다. 그 템플릿은
+          # 존재하지도 않는 MyApp 을 참조해 analyze 를 깨뜨린다. 우리 테스트는
+          # test/ 아래 따로 있으므로 이 파일만 지운다.
+          rm -f test/widget_test.dart
+
+          test -f test/metadata_test.dart && test -f test/photo_key_test.dart \
+            || { echo "❌ 테스트 파일이 사라졌습니다."; exit 1; }
           echo "✅ 소스 트리 정상"
 
       - name: 사진 권한 주입
@@ -137,20 +145,3 @@ jobs:
           files: out/*.apk
           fail_on_unmatched_files: true
 
-  cleanup:
-    needs: build
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - name: 오래된 아티팩트 정리
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const res = await github.rest.actions.listArtifactsForRepo({ owner, repo, per_page: 100 });
-            const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-            for (const a of res.data.artifacts) {
-              if (new Date(a.created_at).getTime() < cutoff) {
-                await github.rest.actions.deleteArtifact({ owner, repo, artifact_id: a.id });
-              }
-            }
