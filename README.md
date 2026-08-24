@@ -62,17 +62,32 @@ CPU 를 모르겠으면 `photo-universal-*.apk` 를 받으면 됩니다.
    > 업데이트할 방법이 영영 없습니다. 클라우드 드라이브나 비밀번호 관리자에
    > 넣어 두세요. (`.gitignore` 에 들어 있어 저장소에는 올라가지 않습니다.)
 
-4. 다음 빌드부터 적용됩니다. 바로 확인하려면 터미널에서:
+4. 다음 빌드부터 적용됩니다. 빌드는 **커밋을 밀어 넣어** 돌립니다:
 
    ```bash
-   gh workflow run build-apk.yml
+   git commit --allow-empty -m "chore: 서명키 적용 빌드" && git push
    ```
 
    Actions 로그의 "서명 keystore 준비" 단계에 경고 대신
    `✅ 업로드 keystore 로 서명합니다.` 가 뜨면 성공입니다.
 
-시크릿 자동 등록이 권한 문제로 실패하면 스크립트가 `gh auth refresh` 명령과
-수동 등록 방법을 함께 알려 줍니다.
+> **`gh workflow run` 은 Codespaces 에서 403 이 납니다.** Codespaces 가 기본으로
+> 주는 토큰은 권한이 좁은 통합(GitHub App) 토큰이라 워크플로를 띄우거나 시크릿을
+> 쓸 수 없습니다. 워크플로가 `push` 에서도 돌기 때문에 커밋을 미는 쪽이 가장
+> 확실합니다.
+
+시크릿 자동 등록도 같은 이유로 실패할 수 있습니다. 그러면 스크립트가 이렇게
+알려 줍니다 — 내 계정으로 다시 로그인한 뒤 시크릿만 다시 등록하면 됩니다
+(**keystore 는 다시 만들지 않습니다**):
+
+```bash
+unset GITHUB_TOKEN GH_TOKEN
+gh auth login -h github.com -p https -w -s repo,workflow
+KEYSTORE_PASSWORD='아까_그_비밀번호' bash scripts/setup_keystore.sh --secrets-only
+```
+
+이것도 번거로우면 **Settings → Secrets and variables → Actions** 에서 직접
+등록해도 됩니다. 스크립트가 `keystore.base64.txt` 를 남겨 둡니다.
 
 <details>
 <summary>Codespaces 대신 내 컴퓨터에서 하려면</summary>
