@@ -89,7 +89,12 @@ jobs:
           fi
 
       - name: 서명 설정 패치
-        run: python3 scripts/patch_android_signing.py
+        run: |
+          python3 scripts/patch_android_signing.py
+          # Gradle 스크립트가 깨지면 원인을 한 번에 보려고 결과물을 남깁니다.
+          echo "::group::패치된 android/app/build.gradle.kts"
+          cat -n android/app/build.gradle.kts
+          echo "::endgroup::"
 
       - run: flutter pub get
 

@@ -17,21 +17,33 @@ import re
 import sys
 from pathlib import Path
 
+# Gradle Kotlin DSL 안에서 `java` 는 패키지가 아니라 Gradle 의 java 확장으로
+# 먼저 해석된다. 그래서 `java.util.Properties()` 라고 쓰면 "Unresolved
+# reference 'util'" 로 스크립트 컴파일이 깨진다. 파일 맨 위에서 import 해야
+# 한다 (Flutter 공식 서명 문서가 쓰는 방식).
+IMPORTS = "import java.util.Properties\nimport java.io.FileInputStream\n\n"
+
+# storeFile 을 만들 때 쓰는 file() 은 Project 의 메서드다. AGP 9 의 새 DSL
+# 블록 안에서 이런 Project 스코프 호출이 어떻게 해석되는지는 버전마다 다르다.
+# 값은 전부 여기 평범한 스크립트 스코프에서 만들어 두고, DSL 블록 안에서는
+# 대입만 한다.
 KEYSTORE_LOADER = '''
 // key.properties 가 있으면 릴리스 서명에 쓴다 (CI 가 시크릿에서 만들어 둔다).
-val keystoreProperties = java.util.Properties()
+val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+val hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
+val keystoreFile = (keystoreProperties["storeFile"] as String?)?.let { file(it) }
 '''
 
 SIGNING_CONFIGS = '''    signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
+            if (hasKeystore) {
                 keyAlias = keystoreProperties["keyAlias"] as String?
                 keyPassword = keystoreProperties["keyPassword"] as String?
-                storeFile = (keystoreProperties["storeFile"] as String?)?.let { file(it) }
+                storeFile = keystoreFile
                 storePassword = keystoreProperties["storePassword"] as String?
             }
         }
@@ -41,7 +53,7 @@ SIGNING_CONFIGS = '''    signingConfigs {
 
 # key.properties 가 없으면 debug 로 폴백 — 빌드 자체는 항상 성공한다.
 RELEASE_SIGNING = (
-    'signingConfig = if (keystorePropertiesFile.exists()) '
+    'signingConfig = if (hasKeystore) '
     'signingConfigs.getByName("release") else signingConfigs.getByName("debug")'
 )
 
@@ -62,6 +74,10 @@ def find_block_end(content: str, pattern: str) -> int | None:
 
 
 def patch(content: str) -> str:
+    # import 는 반드시 파일 맨 위, plugins 블록보다 앞에 와야 한다.
+    if 'import java.util.Properties' not in content:
+        content = IMPORTS + content
+
     if 'keystorePropertiesFile' not in content:
         end = find_block_end(content, r'\bplugins\s*\{')
         if end is None:
@@ -94,7 +110,16 @@ def patch(content: str) -> str:
 
 def verify(content: str) -> None:
     checks = {
+        'Properties import': 'import java.util.Properties' in content,
+        'FileInputStream import': 'import java.io.FileInputStream' in content,
+        'import 가 plugins 앞에 위치': (
+            content.index('import java.util.Properties') < content.index('plugins')
+            if 'plugins' in content else True
+        ),
+        'java.util 직접 참조 없음': 'java.util.Properties()' not in content,
         'keystoreProperties 로딩': 'keystorePropertiesFile' in content,
+        'hasKeystore 플래그': 'val hasKeystore' in content,
+        'file() 호출이 DSL 블록 밖': 'val keystoreFile' in content,
         'release signingConfig 정의': 'create("release")' in content,
         'buildTypes.release 가 release 서명을 참조': (
             'signingConfigs.getByName("release")' in content
