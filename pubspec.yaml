@@ -4,8 +4,10 @@ publish_to: "none"
 version: 0.1.0+1
 
 environment:
-  sdk: ">=3.4.0 <4.0.0"
-  flutter: ">=3.22.0"
+  # Color.withValues / PopScope.onPopInvokedWithResult 를 쓰므로 하한이
+  # 이만큼 필요합니다. CI 는 stable 최신을 씁니다.
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
 
 dependencies:
   flutter:
@@ -13,9 +15,6 @@ dependencies:
 
   # State management
   flutter_riverpod: ^2.5.1
-
-  # Routing
-  go_router: ^14.2.0
 
   # 기기 갤러리 접근 (MediaStore) + 썸네일 ImageProvider
   photo_manager: ^3.2.0
@@ -46,6 +45,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+
+  # 데스크톱/CI 에서 SQLite 를 in-memory 로 띄워 서비스 계층을 실제로 돌려봅니다.
+  sqflite_common_ffi: ^2.3.3
 
 flutter:
   uses-material-design: true

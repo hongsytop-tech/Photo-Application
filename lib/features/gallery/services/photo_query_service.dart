@@ -53,6 +53,39 @@ class PhotoQuery {
         tagIds: tagIds ?? this.tagIds,
         keyword: keyword ?? this.keyword,
       );
+
+  // Riverpod family 의 인자로 쓰이므로 값 동등성이 필요합니다. 이게 없으면
+  // 같은 조건인데도 매 rebuild 마다 새 provider 가 생겨 목록이 처음부터
+  // 다시 로딩됩니다.
+  @override
+  bool operator ==(Object other) =>
+      other is PhotoQuery &&
+      other.scope == scope &&
+      other.folderId == folderId &&
+      other.keyword == keyword &&
+      other.tagIds.length == tagIds.length &&
+      const _ListEquality().equals(other.tagIds, tagIds);
+
+  @override
+  int get hashCode => Object.hash(
+        scope,
+        folderId,
+        keyword,
+        Object.hashAll(tagIds),
+      );
+}
+
+class _ListEquality {
+  const _ListEquality();
+
+  bool equals(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }
 
 class _Sql {
@@ -155,9 +188,9 @@ class PhotoQueryService {
     if (keyword != null && keyword.isNotEmpty) {
       final like = '%${_escapeLike(keyword)}%';
       parts.add(
-        r"(p.file_name LIKE ? ESCAPE '\' "
+        "(p.file_name LIKE ? ESCAPE '\\' "
         'OR EXISTS (SELECT 1 FROM notes n WHERE n.photo_key = p.photo_key '
-        r"AND n.deleted = 0 AND n.body LIKE ? ESCAPE '\'))",
+        "AND n.deleted = 0 AND n.body LIKE ? ESCAPE '\\'))",
       );
       args
         ..add(like)
@@ -170,7 +203,7 @@ class PhotoQueryService {
   /// LIKE 패턴에서 특수문자를 무력화합니다. 이걸 안 하면 검색어에 들어간
   /// `%` 가 와일드카드로 동작해 엉뚱한 결과가 나옵니다.
   static String _escapeLike(String input) => input
-      .replaceAll(r'\', r'\\')
-      .replaceAll('%', r'\%')
-      .replaceAll('_', r'\_');
+      .replaceAll('\\', '\\\\')
+      .replaceAll('%', '\\%')
+      .replaceAll('_', '\\_');
 }

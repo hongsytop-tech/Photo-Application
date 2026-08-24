@@ -25,18 +25,29 @@ class AppDatabase {
   static Future<AppDatabase> getInstance() async {
     if (_instance != null) return _instance!;
     final dir = await getDatabasesPath();
+    return _instance = await openAt(p.join(dir, _fileName));
+  }
+
+  /// 경로를 직접 지정해 엽니다. 테스트에서 in-memory DB 를 쓰기 위한 통로이며,
+  /// 싱글톤을 건드리지 않습니다.
+  static Future<AppDatabase> openAt(String path) async {
     final database = await openDatabase(
-      p.join(dir, _fileName),
+      path,
       version: _version,
-      onConfigure: (db) async {
-        // 외래키는 쓰지 않습니다. 메타데이터는 사진 인덱스보다 오래 살아남아야
-        // 하므로(사진이 일시적으로 사라져도 메모 유지) 의도적으로 느슨하게 둡니다.
-        await db.execute('PRAGMA journal_mode = WAL');
-      },
+      onConfigure: _onConfigure,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
-    return _instance = AppDatabase._(database);
+    return AppDatabase._(database);
+  }
+
+  static Future<void> _onConfigure(Database db) async {
+    // 외래키는 켜지 않습니다. 메타데이터는 사진 인덱스보다 오래 살아남아야
+    // 하므로(사진이 일시적으로 사라져도 메모 유지) 의도적으로 느슨하게 둡니다.
+    //
+    // journal_mode 는 값을 돌려주는 PRAGMA 라 execute 가 아니라 rawQuery 로
+    // 실행합니다.
+    await db.rawQuery('PRAGMA journal_mode = WAL');
   }
 
   static Future<void> _onCreate(Database db, int version) async {
