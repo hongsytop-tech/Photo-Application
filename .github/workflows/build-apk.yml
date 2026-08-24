@@ -118,13 +118,31 @@ jobs:
           flutter build apk --release \
             --build-number=${{ github.run_number }}
 
+      # 어떤 키로 서명됐는지 확인합니다.
+      #
+      # keytool -printcert -jarfile 로는 확인할 수 없습니다. 그건 옛 JAR(v1)
+      # 서명만 읽는데 요즘 Flutter/AGP 는 APK Signature Scheme v2/v3 로만
+      # 서명해서 아무것도 출력되지 않습니다. apksigner 가 맞는 도구입니다.
       - name: 서명 확인
         run: |
-          for apk in build/app/outputs/flutter-apk/*.apk; do
-            echo "▶ $(basename "$apk")"
-            "$JAVA_HOME/bin/keytool" -printcert -jarfile "$apk" 2>/dev/null \
-              | grep -E "SHA256:|Owner:" || true
-          done
+          APKSIGNER="$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::warning::apksigner 를 찾지 못해 서명 확인을 건너뜁니다."
+            exit 0
+          fi
+
+          APK=build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          CERTS="$("$APKSIGNER" verify --print-certs "$APK" 2>/dev/null || true)"
+          echo "$CERTS" | grep -E 'certificate DN:|certificate SHA-256 digest:' || true
+
+          # 결론을 한 줄로 남깁니다. 디버그 키는 CN=Android Debug 로 나옵니다.
+          if [ -z "$CERTS" ]; then
+            echo "::warning::서명 정보를 읽지 못했습니다."
+          elif echo "$CERTS" | grep -q 'CN=Android Debug'; then
+            echo "::warning::임시 debug 키로 서명되었습니다 — 덮어쓰기 설치가 안 됩니다."
+          else
+            echo "✅ 업로드 keystore 로 서명된 APK 입니다."
+          fi
 
       - name: APK 모으기
         run: |
