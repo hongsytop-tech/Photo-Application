@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -57,8 +59,14 @@ class Device {
   final FolderService folders;
   final SyncService sync;
 
-  static Future<Device> create(FakeRemote remote) async =>
-      Device(await AppDatabase.openAt(inMemoryDatabasePath), remote);
+  /// 기기마다 **자기만의 데이터베이스 파일**을 씁니다.
+  ///
+  /// inMemoryDatabasePath(':memory:') 를 두 번 열면 안 됩니다. sqflite 는 열린
+  /// DB 를 경로로 캐시해서 같은 인스턴스를 돌려주므로, 두 기기가 한 저장소를
+  /// 공유하게 됩니다. 그러면 동기화를 거치지 않고도 데이터가 "도착"해 버려서
+  /// 이 파일의 테스트가 전부 무의미해집니다.
+  static Future<Device> create(FakeRemote remote, String dbPath) async =>
+      Device(await AppDatabase.openAt(dbPath), remote);
 
   /// 갤러리 스캔이 넣었을 법한 사진 한 장.
   Future<void> addPhoto(String assetId, String photoKey) => db.db.insert('photos', {
@@ -80,19 +88,35 @@ void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
 
+  late Directory workDir;
   late FakeRemote remote;
   late Device a;
   late Device b;
 
   setUp(() async {
+    workDir = await Directory.systemTemp.createTemp('photo_sync_test');
     remote = FakeRemote();
-    a = await Device.create(remote);
-    b = await Device.create(remote);
+    a = await Device.create(remote, '${workDir.path}/device-a.db');
+    b = await Device.create(remote, '${workDir.path}/device-b.db');
   });
 
   tearDown(() async {
     await a.close();
     await b.close();
+    await workDir.delete(recursive: true);
+  });
+
+  test('두 기기의 로컬 저장소가 서로 분리되어 있다', () async {
+    // 이 파일의 다른 모든 테스트가 이 전제 위에 서 있습니다. 분리가 깨지면
+    // 동기화를 거치지 않고도 데이터가 보여서, 테스트가 통과해도 아무것도
+    // 검증하지 못합니다. 실제로 한 번 그렇게 깨진 적이 있어 못을 박아 둡니다.
+    await a.addPhoto('a1', 'k1');
+    await a.notes.write('k1', 'A 에만 있는 메모');
+
+    expect(await b.notes.read('k1'), isNull,
+        reason: '두 기기가 같은 DB 를 공유하면 이 파일 전체가 무의미해집니다');
+    expect(await b.tags.listAll(), isEmpty);
+    expect(await b.folders.listAll(), isEmpty);
   });
 
   test('사진 원본은 서버로 올라가지 않는다', () async {
