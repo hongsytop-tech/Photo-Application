@@ -8,6 +8,7 @@ import 'package:photo_application/features/gallery/providers/gallery_providers.d
 import 'package:photo_application/features/gallery/services/gallery_service.dart';
 import 'package:photo_application/features/shell/main_shell.dart';
 import 'package:photo_application/features/sync/providers/sync_providers.dart';
+import 'package:photo_application/features/update/providers/update_providers.dart';
 
 class PhotoApp extends ConsumerStatefulWidget {
   const PhotoApp({super.key});
@@ -34,6 +35,11 @@ class _PhotoAppState extends ConsumerState<PhotoApp> {
     }
     if (!mounted) return;
     await ref.read(syncProvider.notifier).run();
+
+    // 새 버전 확인은 맨 뒤에 둡니다. 사진 목록이 먼저 떠야 하고, 실패해도
+    // 앱 사용에는 영향이 없어야 합니다.
+    if (!mounted) return;
+    await ref.read(updateProvider.notifier).check();
   }
 
   @override

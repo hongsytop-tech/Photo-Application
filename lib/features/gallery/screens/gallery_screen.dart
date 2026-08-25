@@ -5,6 +5,7 @@ import 'package:photo_application/features/gallery/providers/gallery_providers.d
 import 'package:photo_application/features/gallery/screens/photo_browser_screen.dart';
 import 'package:photo_application/features/gallery/services/photo_query_service.dart';
 import 'package:photo_application/features/gallery/widgets/permission_gate.dart';
+import 'package:photo_application/features/update/widgets/update_banner.dart';
 
 /// "사진" 탭 — 기기의 모든 사진과 기본 필터들.
 class GalleryScreen extends ConsumerStatefulWidget {
@@ -86,6 +87,7 @@ class _GalleryScreenState extends ConsumerState<GalleryScreen> {
         header: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const UpdateBanner(),
             const LimitedAccessBanner(),
             if (indexing.running)
               Padding(

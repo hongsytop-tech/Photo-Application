@@ -42,6 +42,10 @@ permissions = '''
 
     <!-- Android 14+ "일부 사진만 허용" 모드 -->
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
+
+    <!-- 앱 내 업데이트: 내려받은 APK 의 설치 화면을 띄우기 위해 필요.
+         실제 설치 여부는 사용자가 그 화면에서 결정합니다. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 '''
 
 # <manifest ...> 바로 안쪽에 권한 삽입
@@ -60,7 +64,7 @@ print('✅ AndroidManifest.xml 패치 완료 (사진 권한 + 앱 이름)')
 PY
 
 # 패치 결과 검증 — 조용히 실패하지 않도록
-for perm in READ_MEDIA_IMAGES READ_MEDIA_VISUAL_USER_SELECTED READ_EXTERNAL_STORAGE INTERNET; do
+for perm in READ_MEDIA_IMAGES READ_MEDIA_VISUAL_USER_SELECTED READ_EXTERNAL_STORAGE INTERNET REQUEST_INSTALL_PACKAGES; do
   grep -q "$perm" "$MANIFEST" || { echo "❌ 검증 실패: $perm 권한이 없습니다." >&2; exit 1; }
 done
-echo "✅ 권한 4종 검증 통과"
+echo "✅ 권한 5종 검증 통과"

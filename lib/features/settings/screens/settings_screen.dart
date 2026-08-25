@@ -11,6 +11,7 @@ import 'package:photo_application/features/gallery/providers/photo_meta_provider
 import 'package:photo_application/features/gallery/services/gallery_service.dart';
 import 'package:photo_application/features/gallery/services/photo_query_service.dart';
 import 'package:photo_application/features/sync/providers/sync_providers.dart';
+import 'package:photo_application/features/update/providers/update_providers.dart';
 
 /// "설정" 탭 — 스캔, 계정/동기화, 권한, 데이터 초기화.
 class SettingsScreen extends ConsumerWidget {
@@ -22,6 +23,7 @@ class SettingsScreen extends ConsumerWidget {
     final access = ref.watch(galleryAccessProvider).valueOrNull;
     final user = ref.watch(authStateProvider).valueOrNull;
     final sync = ref.watch(syncProvider);
+    final update = ref.watch(updateProvider);
     final totalAsync = ref.watch(photoCountProvider(const PhotoQuery()));
     final tagsAsync = ref.watch(allTagsProvider);
     final foldersAsync = ref.watch(allFoldersProvider);
@@ -131,6 +133,33 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ],
 
+          const _SectionHeader('앱'),
+          ListTile(
+            leading: const Icon(Icons.system_update),
+            title: const Text('업데이트 확인'),
+            subtitle: Text(_updateLabel(update)),
+            trailing: update.busy
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : null,
+            onTap: update.busy
+                ? null
+                : () => ref.read(updateProvider.notifier).check(),
+          ),
+          if (update.phase == UpdatePhase.available)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: FilledButton.icon(
+                onPressed: () =>
+                    ref.read(updateProvider.notifier).downloadAndInstall(),
+                icon: const Icon(Icons.download),
+                label: Text('지금 업데이트 (${update.release?.sizeLabel ?? ''})'),
+              ),
+            ),
+
           const _SectionHeader('위험 구역'),
           ListTile(
             leading: Icon(
@@ -167,6 +196,26 @@ class SettingsScreen extends ConsumerWidget {
       case GalleryAccess.unknown:
       case null:
         return '확인되지 않음';
+    }
+  }
+
+  static String _updateLabel(UpdateState state) {
+    switch (state.phase) {
+      case UpdatePhase.idle:
+        return '눌러서 새 버전이 있는지 확인합니다.';
+      case UpdatePhase.checking:
+        return '확인 중…';
+      case UpdatePhase.upToDate:
+        return '최신 버전입니다 (빌드 ${state.currentBuild}).';
+      case UpdatePhase.available:
+        return '새 버전 ${state.release?.buildNumber} 이 있습니다 '
+            '(현재 ${state.currentBuild}).';
+      case UpdatePhase.downloading:
+        return '받는 중 ${(state.progress * 100).toStringAsFixed(0)}%';
+      case UpdatePhase.installing:
+        return '설치 화면을 여는 중…';
+      case UpdatePhase.error:
+        return '확인 실패: ${state.error}';
     }
   }
 
