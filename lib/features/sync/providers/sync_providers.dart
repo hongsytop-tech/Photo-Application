@@ -49,7 +49,7 @@ class SyncController extends StateNotifier<SyncStatus> {
         finishedAt: DateTime.now(),
       );
       // 서버에서 내려온 내용이 있으면 화면을 다시 그려야 합니다.
-      if (result.pulled > 0) _ref.bumpDataRevision();
+      if (result.pulled > 0) _ref.bumpDataRevisionFromSync();
     } catch (error, stack) {
       debugPrint('동기화 실패: $error\n$stack');
       if (mounted) {

@@ -10,6 +10,7 @@ import 'package:photo_application/features/gallery/providers/gallery_providers.d
 import 'package:photo_application/features/gallery/providers/photo_meta_providers.dart';
 import 'package:photo_application/features/gallery/services/gallery_service.dart';
 import 'package:photo_application/features/gallery/services/photo_query_service.dart';
+import 'package:photo_application/features/sync/providers/auto_sync.dart';
 import 'package:photo_application/features/sync/providers/sync_providers.dart';
 import 'package:photo_application/features/update/providers/update_providers.dart';
 
@@ -107,6 +108,16 @@ class SettingsScreen extends ConsumerWidget {
                 onPressed: () => ref.read(authServiceProvider).signOut(),
                 child: const Text('로그아웃'),
               ),
+            ),
+            SwitchListTile(
+              secondary: const Icon(Icons.autorenew),
+              title: const Text('자동 동기화'),
+              subtitle: const Text(
+                '메모·태그·폴더를 고치면 잠시 뒤 알아서 올리고, 앱을 다시 열면 받아옵니다.',
+              ),
+              value: ref.watch(autoSyncEnabledProvider),
+              onChanged: (value) =>
+                  ref.read(autoSyncEnabledProvider.notifier).set(value),
             ),
             ListTile(
               leading: const Icon(Icons.sync),

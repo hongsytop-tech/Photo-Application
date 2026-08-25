@@ -27,19 +27,35 @@ final appDatabaseProvider = Provider<AppDatabase>(
 /// 이 값을 watch 합니다.
 final dataRevisionProvider = StateProvider<int>((ref) => 0);
 
+/// 그중 **이 기기에서 직접 만든** 변경만 세는 카운터.
+///
+/// 자동 동기화는 [dataRevisionProvider] 가 아니라 이 값을 봅니다. 서버에서
+/// 받아온 변경까지 세면, 받아온 것 때문에 또 동기화가 돌고 그게 또 변경으로
+/// 잡히면서 동기화가 자기 꼬리를 뭅니다.
+final localEditRevisionProvider = StateProvider<int>((ref) => 0);
+
 /// 메타데이터 변경을 알립니다. 모든 쓰기 동작 뒤에 호출하세요.
 ///
 /// Riverpod 에서 provider 안의 `Ref` 와 위젯의 `WidgetRef` 는 공통 상위 타입이
 /// 없습니다. 양쪽에서 똑같이 `ref.bumpDataRevision()` 으로 쓰려고 확장을
 /// 두 벌 둡니다.
 extension DataRevisionOnRef on Ref {
-  void bumpDataRevision() =>
+  void bumpDataRevision() {
+    read(dataRevisionProvider.notifier).update((value) => value + 1);
+    read(localEditRevisionProvider.notifier).update((value) => value + 1);
+  }
+
+  /// 동기화가 서버에서 받아온 내용을 반영했을 때 씁니다. 화면은 다시 그리되,
+  /// 자동 동기화를 다시 깨우지는 않습니다.
+  void bumpDataRevisionFromSync() =>
       read(dataRevisionProvider.notifier).update((value) => value + 1);
 }
 
 extension DataRevisionOnWidgetRef on WidgetRef {
-  void bumpDataRevision() =>
-      read(dataRevisionProvider.notifier).update((value) => value + 1);
+  void bumpDataRevision() {
+    read(dataRevisionProvider.notifier).update((value) => value + 1);
+    read(localEditRevisionProvider.notifier).update((value) => value + 1);
+  }
 }
 
 final galleryServiceProvider = Provider<GalleryService>(

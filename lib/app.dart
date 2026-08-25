@@ -7,6 +7,7 @@ import 'package:photo_application/features/auth/providers/auth_providers.dart';
 import 'package:photo_application/features/gallery/providers/gallery_providers.dart';
 import 'package:photo_application/features/gallery/services/gallery_service.dart';
 import 'package:photo_application/features/shell/main_shell.dart';
+import 'package:photo_application/features/sync/providers/auto_sync.dart';
 import 'package:photo_application/features/sync/providers/sync_providers.dart';
 import 'package:photo_application/features/update/providers/update_providers.dart';
 
@@ -44,6 +45,10 @@ class _PhotoAppState extends ConsumerState<PhotoApp> {
 
   @override
   Widget build(BuildContext context) {
+    // 편집·복귀 때 알아서 동기화하는 감시자. provider 는 게을러서 아무도 보지
+    // 않으면 만들어지지 않으므로, 앱이 떠 있는 동안 여기서 붙들어 둡니다.
+    ref.watch(autoSyncProvider);
+
     // 로그인 상태가 바뀌면 (로그인 직후) 한 번 맞춰 줍니다.
     ref.listen(authStateProvider, (previous, next) {
       final user = next.valueOrNull;
