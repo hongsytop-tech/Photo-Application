@@ -24,11 +24,30 @@ class UpdateService {
   static const _latestUrl =
       'https://api.github.com/repos/$_owner/$_repo/releases/latest';
 
-  /// 지금 설치된 빌드 번호. CI 가 `--build-number` 로 심어 둡니다.
+  /// 빌드할 때 --dart-define 으로 심는 번호. 이게 가장 믿을 만합니다.
+  static const compiledBuildNumber =
+      int.fromEnvironment('BUILD_NUMBER', defaultValue: 0);
+
+  /// 지금 설치된 빌드 번호.
   Future<int> currentBuildNumber() async {
+    if (compiledBuildNumber > 0) return compiledBuildNumber;
+
+    // 폴백: 안드로이드 versionCode.
     final info = await PackageInfo.fromPlatform();
-    return int.tryParse(info.buildNumber) ?? 0;
+    return stripAbiOffset(int.tryParse(info.buildNumber) ?? 0);
   }
+
+  /// versionCode 에서 ABI 오프셋을 걷어냅니다.
+  ///
+  /// --split-per-abi 로 빌드하면 Flutter 가 versionCode 에 ABI 별 오프셋을
+  /// 더합니다 (armeabi-v7a +1000, arm64-v8a +2000, x86_64 +4000). 그래서
+  /// 빌드 11 의 arm64 APK 는 versionCode 가 2011 이 됩니다.
+  ///
+  /// 이걸 모르고 릴리스 번호와 그대로 견주면 2011 vs 13 이 되어 언제나
+  /// "이미 최신"으로 판정합니다. 업데이트가 영원히 오지 않는데 화면에는
+  /// 아무 이상이 없어 보이는, 알아채기 어려운 종류의 고장입니다.
+  static int stripAbiOffset(int versionCode) =>
+      versionCode >= 1000 ? versionCode % 1000 : versionCode;
 
   /// 서버의 최신 릴리스. 없거나 읽지 못하면 null.
   ///

@@ -84,7 +84,18 @@ class UpdateController extends StateNotifier<UpdateState> {
       final latest = await service.fetchLatest();
       if (!mounted) return;
 
-      if (latest == null || latest.buildNumber <= current) {
+      // 조회 실패를 "최신"으로 뭉뚱그리면 안 됩니다. 업데이트가 오지 않는데
+      // 화면에는 아무 문제 없어 보여서, 고장난 줄 모르고 지나가게 됩니다.
+      if (latest == null) {
+        state = UpdateState(
+          phase: UpdatePhase.error,
+          currentBuild: current,
+          error: '릴리스 정보를 읽지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        );
+        return;
+      }
+
+      if (latest.buildNumber <= current) {
         state = UpdateState(phase: UpdatePhase.upToDate, currentBuild: current);
         return;
       }
