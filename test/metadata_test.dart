@@ -3,6 +3,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:photo_application/core/db/app_database.dart';
 import 'package:photo_application/features/folders/services/folder_service.dart';
+import 'package:photo_application/features/gallery/services/gallery_service.dart';
+import 'package:photo_application/features/gallery/services/photo_index_service.dart';
 import 'package:photo_application/features/gallery/services/photo_query_service.dart';
 import 'package:photo_application/features/notes/services/note_service.dart';
 import 'package:photo_application/features/tags/services/tag_service.dart';
@@ -20,6 +22,7 @@ void main() {
   late TagService tags;
   late FolderService folders;
   late PhotoQueryService photos;
+  late PhotoIndexService index;
 
   /// 갤러리 스캔이 넣었을 법한 행을 직접 만든다.
   Future<void> addPhoto(
@@ -49,6 +52,7 @@ void main() {
     tags = TagService(db);
     folders = FolderService(db);
     photos = PhotoQueryService(db);
+    index = PhotoIndexService(db, const GalleryService());
   });
 
   tearDown(() => db.db.close());
@@ -155,6 +159,48 @@ void main() {
         await tags.attach('k1', (await tags.ensure(name)).id);
       }
       expect(await idsOf(const PhotoQuery(scope: PhotoScope.tagged)), ['a1']);
+    });
+  });
+
+  group('기기에서 사진 지우기', () {
+    test('지운 사진은 목록에서 사라지고 메모·태그는 남는다', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('a2', 'k2');
+      await notes.write('k1', '지울 사진의 메모');
+      await tags.attach('k1', (await tags.ensure('바다')).id);
+
+      // 기기 삭제가 성공한 뒤 인덱스를 정리하는 지점.
+      expect(await index.forget(['a1']), 1);
+
+      expect(await idsOf(const PhotoQuery()), ['a2']);
+      // 메타데이터는 photo_key 에 매달려 있어 그대로 남습니다. 같은 사진이
+      // 다른 기기에는 아직 있을 수 있어서, 여기서 지우면 그쪽까지 잃습니다.
+      expect((await notes.read('k1'))?.body, '지울 사진의 메모');
+      expect((await tags.tagsOf('k1')).single.name, '바다');
+    });
+
+    test('여러 장을 한 번에 뺀다', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('a2', 'k2');
+      await addPhoto('a3', 'k3');
+      expect(await index.forget(['a1', 'a3']), 2);
+      expect(await idsOf(const PhotoQuery()), ['a2']);
+    });
+
+    test('시스템 확인 창에서 거절해 지워진 것이 없으면 아무것도 빼지 않는다', () async {
+      await addPhoto('a1', 'k1');
+      expect(await index.forget(const []), 0);
+      expect(await idsOf(const PhotoQuery()), ['a1']);
+    });
+
+    test('사라진 사진은 태그의 사진 수에도 세지 않는다', () async {
+      await addPhoto('a1', 'k1');
+      final tag = await tags.ensure('바다');
+      await tags.attach('k1', tag.id);
+      expect((await tags.listAll()).single.photoCount, 1);
+
+      await index.forget(['a1']);
+      expect((await tags.listAll()).single.photoCount, 0);
     });
   });
 

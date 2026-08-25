@@ -88,4 +88,17 @@ class GalleryService {
     );
     return paths.isEmpty ? null : paths.first;
   }
+
+  /// 기기 저장소에서 사진을 지웁니다. **실제로 지워진 asset id 만** 돌려줍니다.
+  ///
+  /// Android 11 이상에서는 시스템이 확인 창을 띄우고, 사용자가 거기서 거절하면
+  /// 아무것도 지워지지 않은 채 빈 목록이 돌아옵니다. 그래서 "요청한 것"이
+  /// 아니라 "지워진 것"을 기준으로 인덱스를 정리해야 합니다.
+  ///
+  /// 휴지통이 있는 기기(갤럭시 등)에서는 파일이 휴지통으로 들어가며, 앱에서는
+  /// 어느 쪽이든 똑같이 "사라진 사진"으로 보입니다.
+  Future<List<String>> deleteAssets(List<String> assetIds) async {
+    if (assetIds.isEmpty) return const [];
+    return PhotoManager.editor.deleteWithIds(assetIds);
+  }
 }

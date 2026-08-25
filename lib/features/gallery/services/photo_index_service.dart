@@ -123,4 +123,23 @@ class PhotoIndexService {
     debugPrint('사진 인덱싱 완료: $done/$total 장, 사라진 사진 $removed 장');
     return PhotoIndexResult(total: total, indexed: done, removed: removed);
   }
+
+  /// 기기에서 지워진 사진을 인덱스에서 뺍니다.
+  ///
+  /// 다음 스캔이 어차피 정리하지만, 그때까지 목록에 남아 있으면 방금 지운
+  /// 사진이 계속 보입니다. 눌러도 이미지가 없어 빈 칸이 되므로 바로 뺍니다.
+  ///
+  /// **메모·태그·폴더는 지우지 않습니다.** 그것들은 photo_key 에 매달려 있고,
+  /// 같은 사진이 다른 기기에는 아직 남아 있을 수 있습니다. 여기서 함께 지우면
+  /// 한 기기에서 정리한 것이 다른 기기의 메모까지 앗아갑니다.
+  Future<int> forget(Iterable<String> assetIds) async {
+    final ids = assetIds.toList();
+    if (ids.isEmpty) return 0;
+    final marks = List.filled(ids.length, '?').join(',');
+    return _database.db.delete(
+      'photos',
+      where: 'asset_id IN ($marks)',
+      whereArgs: ids,
+    );
+  }
 }
