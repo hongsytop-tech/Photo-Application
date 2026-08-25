@@ -16,6 +16,7 @@ class _TableSpec {
     required this.keys,
     required this.data,
     this.pushFilter,
+    this.alwaysPush = false,
   });
 
   final String local;
@@ -29,6 +30,14 @@ class _TableSpec {
 
   /// 서버로 올릴 행을 더 좁히는 조건 (선택).
   final String? pushFilter;
+
+  /// 워터마크를 건너뛰고 [pushFilter] 에 맞는 행을 매번 올립니다.
+  ///
+  /// 워터마크는 "지난 동기화 이후 바뀐 행"만 올립니다. 그런데 값은 그대로인데
+  /// **올라갈 자격만 나중에 생기는** 행이 있습니다. 사진 신원 정보가 그렇습니다 —
+  /// 스캔할 때 만들어지고, 한참 뒤 메모가 붙어야 올릴 대상이 됩니다. 그 사이
+  /// updated_ms 는 한 번도 안 바뀌므로 워터마크로는 영원히 잡히지 않습니다.
+  final bool alwaysPush;
 
   List<String> get allColumns => [...keys, ...data, 'updated_ms', 'deleted'];
 
@@ -107,6 +116,7 @@ class SyncService {
           UNION SELECT photo_key FROM folder_items WHERE deleted = 0
         )
       ''',
+      alwaysPush: true,
     ),
   ];
 
@@ -279,14 +289,19 @@ class SyncService {
   }
 
   Future<int> _push(_TableSpec spec, String userId, int watermark) async {
-    final conditions = ['updated_ms > ?'];
+    final conditions = <String>[];
+    final args = <Object?>[];
+    if (!spec.alwaysPush) {
+      conditions.add('updated_ms > ?');
+      args.add(watermark);
+    }
     if (spec.pushFilter != null) conditions.add('(${spec.pushFilter})');
 
     final rows = await _database.db.query(
       spec.local,
       columns: spec.allColumns,
-      where: conditions.join(' AND '),
-      whereArgs: [watermark],
+      where: conditions.isEmpty ? null : conditions.join(' AND '),
+      whereArgs: args.isEmpty ? null : args,
     );
     if (rows.isEmpty) return 0;
 

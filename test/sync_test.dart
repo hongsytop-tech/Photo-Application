@@ -263,6 +263,44 @@ void main() {
         reason: '기기의 사진 전부를 올리면 수만 건이 됩니다');
   });
 
+  test('나중에 메모가 붙은 사진의 신원 정보도 결국 올라간다', () async {
+    // 실제 순서를 그대로 따라간다:
+    //   1) 앱 시작 → 스캔이 photo_identity 를 만든다 (그때 시각으로)
+    //   2) 첫 동기화 → 올릴 메타데이터가 없어 아무것도 안 올라간다
+    //   3) 나중에 사용자가 메모를 쓴다
+    //   4) 다음 동기화 → 메모와 함께 그 사진의 신원 정보도 올라가야 한다
+    //
+    // 워터마크는 "지난 동기화 이후 바뀐 행"만 올린다. 신원 정보는 스캔
+    // 이후 값이 그대로라 바뀐 적이 없고, 그래서 영원히 빠진다. 올라갈
+    // 자격이 생겼는데 값이 안 바뀌는 종류의 행은 워터마크로 못 잡는다.
+    await a.addPhoto('a1', 'k1');
+    await a.db.db.insert('photo_identity', {
+      'photo_key': 'k1',
+      'file_name': 'IMG_1.jpg',
+      'created_ms': 1000,
+      'width': 100,
+      'height': 100,
+      'updated_ms': 1, // 스캔 시각 — 아주 오래전
+      'deleted': 0,
+    });
+
+    await a.run(); // 첫 동기화: 메타데이터가 없으니 신원 정보도 안 올라감
+    expect(await remote.fetchAll('photo_identities', 'user-1'), isEmpty);
+
+    await a.notes.write('k1', '나중에 쓴 메모');
+    await a.run();
+
+    expect(
+      (await remote.fetchAll('photo_notes', 'user-1')).map((r) => r['photo_key']),
+      ['k1'],
+    );
+    expect(
+      (await remote.fetchAll('photo_identities', 'user-1')).map((r) => r['photo_key']),
+      ['k1'],
+      reason: '메모만 올라가고 신원 정보가 빠지면 기기를 바꿨을 때 재매칭 단서가 없다',
+    );
+  });
+
   test('로그아웃 상태에서는 아무것도 하지 않는다', () async {
     await a.addPhoto('a1', 'k1');
     await a.notes.write('k1', '메모');
