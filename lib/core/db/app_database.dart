@@ -52,47 +52,23 @@ class AppDatabase {
 
   static Future<void> _onCreate(Database db, int version) async {
     final batch = db.batch();
-    for (final stmt in _schema) {
+    for (final stmt in _schemaV1) {
       batch.execute(stmt);
     }
     await batch.commit(noResult: true);
   }
 
   static Future<void> _onUpgrade(Database db, int from, int to) async {
-    // 이미 쓰고 있는 기기의 메모·태그를 그대로 둔 채 모양만 넓힙니다.
-    // 새로 까는 기기는 _onCreate 로 완성형을 받으므로 여기 오지 않습니다.
-    if (from < 2) {
-      for (final stmt in _migrationV2) {
-        await db.execute(stmt);
-      }
-    }
+    // 아직 실제 마이그레이션은 없습니다. 스키마를 바꿀 때 여기에 from < N
+    // 분기를 추가하세요.
+    //
+    // 버전 2 는 비어 있지만 되돌리지 않습니다. 빌드 #16 이 태그 분류용
+    // 테이블을 만들며 이 번호를 이미 썼고, 그 빌드를 깔았던 기기는 로컬 DB
+    // 가 2 로 올라가 있습니다. 여기서 1 로 낮추면 sqflite 가 다운그레이드로
+    // 보고 앱이 열리지 않습니다. 쓰이지 않는 테이블 하나가 남는 편이 낫습니다.
   }
 
-  /// v1 → v2: 태그를 묶는 분류.
-  static const List<String> _migrationV2 = [
-    _createTagGroups,
-    _tagsGroupColumn,
-    _tagsGroupIndex,
-  ];
-
-  // 최초 생성과 업그레이드가 같은 문장을 쓰도록 따로 빼 둡니다. 두 벌로
-  // 두면 한쪽만 고쳐져 기기마다 스키마가 갈라집니다.
-  static const _createTagGroups = '''
-    CREATE TABLE tag_groups (
-      id         TEXT PRIMARY KEY,
-      name       TEXT NOT NULL,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      updated_ms INTEGER NOT NULL DEFAULT 0,
-      deleted    INTEGER NOT NULL DEFAULT 0
-    )
-  ''';
-  static const _tagsGroupColumn =
-      "ALTER TABLE tags ADD COLUMN group_id TEXT NOT NULL DEFAULT ''";
-  static const _tagsGroupIndex =
-      'CREATE INDEX tags_group_idx ON tags (group_id)';
-
-  /// 새로 설치하는 기기가 받는 완성형 스키마 (현재 v2).
-  static const List<String> _schema = [
+  static const List<String> _schemaV1 = [
     // --- 기기 갤러리 인덱스 (스캔으로 재생성됨) ---------------------------
     '''
     CREATE TABLE photos (
@@ -118,25 +94,16 @@ class AppDatabase {
     )
     ''',
 
-    // --- 태그 분류 --------------------------------------------------------
-    // 태그가 늘어나면 한 줄 목록으로는 찾기 어려워집니다. 태그를 묶는 한 단계
-    // 위 서랍입니다. 폴더와 달리 사진이 아니라 **태그**를 담습니다.
-    _createTagGroups,
-
     // --- 태그 사전 --------------------------------------------------------
-    // group_id 가 빈 문자열이면 "미분류"입니다. NULL 대신 빈 문자열을 쓰는 건
-    // 조회·동기화 어느 쪽에서도 NULL 비교를 따로 다루지 않기 위해서입니다.
     '''
     CREATE TABLE tags (
       id         TEXT PRIMARY KEY,
       name       TEXT NOT NULL,
-      group_id   TEXT NOT NULL DEFAULT '',
       updated_ms INTEGER NOT NULL DEFAULT 0,
       deleted    INTEGER NOT NULL DEFAULT 0
     )
     ''',
     'CREATE INDEX tags_name_idx ON tags (name)',
-    _tagsGroupIndex,
 
     // --- 사진 ↔ 태그 (다대다) ---------------------------------------------
     '''
@@ -206,7 +173,6 @@ class AppDatabase {
     await db.transaction((txn) async {
       for (final table in [
         'notes',
-        'tag_groups',
         'tags',
         'photo_tags',
         'folders',

@@ -79,16 +79,10 @@ class SyncService {
       data: ['body'],
     ),
     _TableSpec(
-      local: 'tag_groups',
-      remote: 'photo_tag_groups',
-      keys: ['id'],
-      data: ['name', 'sort_order'],
-    ),
-    _TableSpec(
       local: 'tags',
       remote: 'photo_tag_defs',
       keys: ['id'],
-      data: ['name', 'group_id'],
+      data: ['name'],
     ),
     _TableSpec(
       local: 'photo_tags',
@@ -189,11 +183,11 @@ class SyncService {
           if (localUpdated >= remoteUpdated) continue;
         }
 
-        // 값이 없는 칸은 아예 빼서 테이블 기본값이 들어가게 합니다. 서버가
-        // 아직 새 칸을 모르는 동안(마이그레이션 전이거나, 예전 앱만 쓰던
-        // 계정) 그 칸이 null 로 와도 NOT NULL 에 걸려 동기화 전체가
-        // 멈추지 않게 하려는 것입니다. 이 스키마에는 nullable 컬럼이 없어
-        // "빠진 값 = 기본값"이 언제나 옳습니다.
+        // 값이 없는 칸은 아예 빼서 테이블 기본값이 들어가게 합니다. 서버 행에
+        // 우리가 아는 칸이 하나라도 빠져 있으면(예전 앱만 쓰던 계정, 아직
+        // 넓히지 않은 서버) null 이 NOT NULL 에 걸려 내려받기 전체가
+        // 뒤집힙니다. 이 스키마에는 nullable 컬럼이 없어 "빠진 값 = 기본값"이
+        // 언제나 옳습니다.
         final values = <String, Object?>{};
         for (final column in spec.allColumns) {
           final value = _normalize(column, remote[column]);
@@ -223,17 +217,14 @@ class SyncService {
     final now = DateTime.now().millisecondsSinceEpoch;
 
     final rows = await _database.db.rawQuery(
-      'SELECT id, name, group_id FROM tags WHERE deleted = 0 ORDER BY id ASC',
+      'SELECT id, name FROM tags WHERE deleted = 0 ORDER BY id ASC',
     );
 
     final byName = <String, List<String>>{};
-    final groupOf = <String, String>{};
     for (final row in rows) {
       final name = ((row['name'] as String?) ?? '').trim().toLowerCase();
       if (name.isEmpty) continue;
-      final id = row['id'] as String;
-      byName.putIfAbsent(name, () => []).add(id);
-      groupOf[id] = (row['group_id'] as String?) ?? '';
+      byName.putIfAbsent(name, () => []).add(row['id'] as String);
     }
 
     final duplicates = byName.values.where((ids) => ids.length > 1).toList();
@@ -242,24 +233,6 @@ class SyncService {
     await _database.db.transaction((txn) async {
       for (final ids in duplicates) {
         final winner = ids.first;
-
-        // 이긴 쪽이 미분류인데 진 쪽에 분류가 있으면 그것을 물려받습니다.
-        // 그러지 않으면 다른 기기에서 정리해 둔 분류가 병합만으로 사라집니다.
-        // id 순으로 첫 번째 것을 고르므로 어느 기기에서 돌려도 답이 같습니다.
-        if ((groupOf[winner] ?? '').isEmpty) {
-          final inherited = ids
-              .map((id) => groupOf[id] ?? '')
-              .firstWhere((g) => g.isNotEmpty, orElse: () => '');
-          if (inherited.isNotEmpty) {
-            await txn.update(
-              'tags',
-              {'group_id': inherited, 'updated_ms': now},
-              where: 'id = ?',
-              whereArgs: [winner],
-            );
-          }
-        }
-
         for (final loser in ids.skip(1)) {
           // 진 태그가 달려 있던 사진들을 이긴 태그로 옮깁니다.
           final links = await txn.query(

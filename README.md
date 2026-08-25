@@ -10,8 +10,6 @@
    그려지는 게 아니라, 열어야 보이는 별도의 글입니다.
 3. **복수 태그** — 사진 한 장에 태그를 여러 개 달고, 같은 태그를 가진 사진을
    모아 봅니다. 태그를 여러 개 골라 **전부 가진** 사진만 좁혀 볼 수도 있습니다.
-   태그가 많아지면 **분류**로 묶어 정리하고, 사진에 태그를 달 때 그 분류로
-   목록을 좁혀 고를 수 있습니다. 어느 분류에도 넣지 않은 태그는 **미분류**입니다.
 4. **가상 폴더** — 기기의 실제 폴더와 무관하게 나만의 폴더를 만들어 사진을
    담습니다. 어느 폴더에도 담지 않은 사진은 **미지정**으로 모입니다.
 
@@ -128,8 +126,7 @@ Actions 에 맡깁니다.
 맞추고 싶을 때만** 필요합니다. **사진 원본은 서버로 올라가지 않습니다.**
 
 1. Supabase 프로젝트 생성 → `SUPABASE_URL`, `anon key` 확보
-2. SQL Editor 에서 `supabase/migrations/` 의 SQL 을 번호순으로 실행
-   (`0001_photo_metadata.sql` → `0002_tag_groups.sql`)
+2. SQL Editor 에서 `supabase/migrations/0001_photo_metadata.sql` 실행
 3. 저장소 시크릿에 `SUPABASE_URL`, `SUPABASE_ANON_KEY` 등록 후 다시 빌드
 4. 앱의 설정 탭에서 로그인
 
@@ -175,7 +172,7 @@ lib/
     auth/      로그인 (선택)
     settings/  스캔·계정·초기화
     shell/     하단 탭
-supabase/migrations/  서버 스키마 (번호순으로 실행)
+supabase/migrations/0001_photo_metadata.sql
 scripts/       CI 에서 android/ 를 패치하는 스크립트
 ```
 
