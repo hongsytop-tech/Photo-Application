@@ -113,10 +113,10 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
     if (saved ?? false) _clearSelection();
   }
 
-  /// 고른 사진을 **기기 저장소에서** 지웁니다.
+  /// 고른 사진을 기기에서 치웁니다 — 되도록 **휴지통으로** 보냅니다.
   ///
   /// 이 앱의 다른 모든 동작은 사진 파일을 읽기만 하는데 이것만 예외라서,
-  /// 확인 창에서 무엇이 지워지는지 분명히 말합니다. Android 11+ 는 그 뒤에
+  /// 확인 창에서 무엇이 일어나는지 분명히 말합니다. 그 뒤에 안드로이드가
   /// 시스템 확인 창을 한 번 더 띄웁니다.
   Future<void> _bulkDelete() async {
     final ids = _selected.toList();
@@ -125,9 +125,11 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('사진 ${ids.length}장을 지울까요?'),
+        title: Text('사진 ${ids.length}장을 휴지통으로 보낼까요?'),
         content: const Text(
-          '기기 저장소에서 지워집니다. 휴지통이 있는 기기라면 휴지통으로 들어갑니다.\n\n'
+          '기기의 휴지통으로 들어가며, 30일 안에는 갤러리에서 되살릴 수 '
+          '있습니다. 휴지통이 없는 기기(안드로이드 10 이하)에서는 바로 '
+          '지워집니다.\n\n'
           '메모와 태그는 지우지 않습니다. 같은 사진이 다른 기기에 남아 있을 수 '
           '있어서, 거기서는 그대로 보입니다.',
         ),
@@ -138,7 +140,7 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('지우기'),
+            child: const Text('휴지통으로'),
           ),
         ],
       ),
@@ -148,19 +150,23 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
     setState(() => _deleting = true);
     try {
       // 시스템 확인 창에서 거절당하면 빈 목록이 옵니다. 요청한 수가 아니라
-      // 실제로 지워진 것만 인덱스에서 뺍니다.
-      final deleted = await ref.read(galleryServiceProvider).deleteAssets(ids);
-      await ref.read(photoIndexServiceProvider).forget(deleted);
+      // 실제로 치워진 것만 인덱스에서 뺍니다.
+      final removed = await ref.read(galleryServiceProvider).removeAssets(ids);
+      await ref.read(photoIndexServiceProvider).forget(removed.ids);
       if (!mounted) return;
 
       ref.bumpDataRevision();
       _clearSelection();
-      _say(deleted.isEmpty
-          ? '지우지 않았습니다.'
-          : '${deleted.length}장을 기기에서 지웠습니다.');
+      if (removed.isEmpty) {
+        _say('아무것도 치우지 않았습니다.');
+      } else if (removed.trashed) {
+        _say('${removed.ids.length}장을 휴지통으로 보냈습니다.');
+      } else {
+        _say('${removed.ids.length}장을 기기에서 지웠습니다.');
+      }
     } catch (error, stack) {
       debugPrint('사진 삭제 실패: $error\n$stack');
-      if (mounted) _say('지우지 못했습니다: $error');
+      if (mounted) _say('치우지 못했습니다: $error');
     } finally {
       if (mounted) setState(() => _deleting = false);
     }
@@ -221,7 +227,7 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
                     onPressed: _deleting ? null : _bulkDelete,
-                    tooltip: '기기에서 지우기',
+                    tooltip: '휴지통으로 보내기',
                   ),
                 ],
               )

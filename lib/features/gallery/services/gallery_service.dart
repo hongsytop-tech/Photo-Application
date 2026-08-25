@@ -89,16 +89,57 @@ class GalleryService {
     return paths.isEmpty ? null : paths.first;
   }
 
-  /// 기기 저장소에서 사진을 지웁니다. **실제로 지워진 asset id 만** 돌려줍니다.
+  /// 사진을 기기에서 치웁니다. **실제로 치워진 asset id 만** 돌려줍니다.
   ///
-  /// Android 11 이상에서는 시스템이 확인 창을 띄우고, 사용자가 거기서 거절하면
-  /// 아무것도 지워지지 않은 채 빈 목록이 돌아옵니다. 그래서 "요청한 것"이
-  /// 아니라 "지워진 것"을 기준으로 인덱스를 정리해야 합니다.
+  /// 되도록 **휴지통으로 보냅니다.** Android 11 부터 MediaStore 에 시스템
+  /// 휴지통이 있어서, 거기로 보내면 30일 안에는 되살릴 수 있습니다. 완전 삭제는
+  /// 되돌릴 방법이 아예 없으므로 기본으로 삼을 동작이 아닙니다.
   ///
-  /// 휴지통이 있는 기기(갤럭시 등)에서는 파일이 휴지통으로 들어가며, 앱에서는
-  /// 어느 쪽이든 똑같이 "사라진 사진"으로 보입니다.
-  Future<List<String>> deleteAssets(List<String> assetIds) async {
-    if (assetIds.isEmpty) return const [];
-    return PhotoManager.editor.deleteWithIds(assetIds);
+  /// 휴지통을 쓸 수 없는 기기(Android 10 이하)에서는 완전 삭제로 넘어갑니다.
+  /// 그 경로에서도 시스템이 확인 창을 한 번 더 띄웁니다.
+  ///
+  /// 어느 쪽이든 사용자가 시스템 확인 창에서 거절하면 아무것도 치워지지 않은 채
+  /// 빈 목록이 돌아옵니다. 그래서 "요청한 것"이 아니라 "치워진 것"을 기준으로
+  /// 인덱스를 정리해야 합니다.
+  Future<PhotoRemoval> removeAssets(List<String> assetIds) async {
+    if (assetIds.isEmpty) return const PhotoRemoval.none();
+
+    try {
+      final entities = <AssetEntity>[];
+      for (final id in assetIds) {
+        final entity = await AssetEntity.fromId(id);
+        if (entity != null) entities.add(entity);
+      }
+      if (entities.isNotEmpty) {
+        final moved = await PhotoManager.editor.android.moveToTrash(entities);
+        // 빈 목록은 "사용자가 확인 창에서 거절함"입니다. 실패가 아니므로
+        // 완전 삭제로 넘어가면 안 됩니다 — 방금 거절한 사람에게 창을 한 번 더
+        // 들이밀고, 이번에는 되돌릴 수 없게 지우게 됩니다.
+        return PhotoRemoval(ids: moved, trashed: true);
+      }
+    } catch (error) {
+      // Android 10 이하에는 휴지통 자체가 없어 여기서 예외가 납니다.
+      debugPrint('휴지통으로 보내지 못해 완전 삭제로 넘어갑니다: $error');
+    }
+
+    final deleted = await PhotoManager.editor.deleteWithIds(assetIds);
+    return PhotoRemoval(ids: deleted, trashed: false);
   }
+}
+
+/// 사진을 치운 결과.
+class PhotoRemoval {
+  const PhotoRemoval({required this.ids, required this.trashed});
+
+  const PhotoRemoval.none()
+      : ids = const [],
+        trashed = false;
+
+  /// 실제로 치워진 asset id 들. 사용자가 시스템 확인 창에서 거절하면 비어 있습니다.
+  final List<String> ids;
+
+  /// 휴지통으로 보냈으면 true, 완전히 지웠으면 false.
+  final bool trashed;
+
+  bool get isEmpty => ids.isEmpty;
 }
