@@ -4,6 +4,7 @@ import 'package:photo_application/core/providers/core_providers.dart';
 import 'package:photo_application/features/folders/models/photo_folder.dart';
 import 'package:photo_application/features/notes/models/photo_note.dart';
 import 'package:photo_application/features/tags/models/tag.dart';
+import 'package:photo_application/features/tags/models/tag_group.dart';
 
 /// 사진 한 장에 붙은 메모.
 final noteForPhotoProvider =
@@ -30,6 +31,12 @@ final folderIdsForPhotoProvider =
 final allTagsProvider = FutureProvider<List<Tag>>((ref) async {
   ref.watch(dataRevisionProvider);
   return ref.watch(tagServiceProvider).listAll();
+});
+
+/// 전체 태그 분류 목록 (태그 수 포함).
+final allTagGroupsProvider = FutureProvider<List<TagGroup>>((ref) async {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(tagServiceProvider).listGroups();
 });
 
 /// 전체 가상 폴더 목록 (사진 수 포함).

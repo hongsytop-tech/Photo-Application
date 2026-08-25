@@ -230,6 +230,81 @@ void main() {
     );
   });
 
+  test('태그 분류가 다른 기기에 그대로 도착한다', () async {
+    await a.addPhoto('a1', 'k1');
+    final people = await a.tags.ensureGroup('인물');
+    final mom = await a.tags.ensure('엄마', groupId: people.id);
+    await a.tags.attach('k1', mom.id);
+
+    await a.run();
+    await b.run();
+
+    final groups = await b.tags.listGroups();
+    expect(groups.single.name, '인물');
+    expect((await b.tags.listAll()).single.groupId, groups.single.id);
+  });
+
+  test('한쪽에서 지운 분류가 다른 쪽에서 되살아나지 않는다', () async {
+    final people = await a.tags.ensureGroup('인물');
+    await a.tags.ensure('엄마', groupId: people.id);
+    await a.run();
+    await b.run();
+    expect((await b.tags.listGroups()).length, 1);
+
+    await a.tags.deleteGroup(people.id);
+    await a.run();
+    await b.run();
+
+    expect(await b.tags.listGroups(), isEmpty);
+    // 분류만 사라지고 태그는 남아야 합니다.
+    final tags = await b.tags.listAll();
+    expect(tags.single.name, '엄마');
+    expect(tags.single.groupId, isEmpty);
+  });
+
+  test('합쳐지는 태그의 분류를 잃지 않는다', () async {
+    // A 는 분류까지 정리해 두었고, B 는 같은 이름을 아무 분류 없이 만들었다.
+    final people = await a.tags.ensureGroup('인물');
+    await a.tags.ensure('엄마', groupId: people.id);
+    await b.tags.ensure('엄마');
+
+    await a.run();
+    await b.run();
+    await a.run();
+    await b.run();
+
+    for (final device in [a, b]) {
+      final tags = await device.tags.listAll();
+      expect(tags.length, 1);
+      expect(
+        tags.single.groupId,
+        isNotEmpty,
+        reason: '병합만으로 분류가 사라지면 안 됩니다',
+      );
+      expect((await device.tags.listGroups()).single.name, '인물');
+    }
+  });
+
+  test('서버가 아직 모르는 칸이 비어 와도 동기화가 멈추지 않는다', () async {
+    // 마이그레이션을 아직 돌리지 않은 서버는 group_id 를 돌려주지 않습니다.
+    // 그 값을 그대로 쓰면 NOT NULL 에 걸려 pull 전체가 뒤집힙니다.
+    remote.tables['photo_tag_defs'] = {
+      'user-1|t1': {
+        'user_id': 'user-1',
+        'id': 't1',
+        'name': '바다',
+        'updated_ms': 100,
+        'deleted': 0,
+      },
+    };
+
+    await b.run();
+
+    final tags = await b.tags.listAll();
+    expect(tags.single.name, '바다');
+    expect(tags.single.groupId, isEmpty, reason: '기본값이 들어가야 한다');
+  });
+
   test('바뀐 것이 없으면 다시 올려보내지 않는다', () async {
     await a.addPhoto('a1', 'k1');
     await a.notes.write('k1', '메모');
