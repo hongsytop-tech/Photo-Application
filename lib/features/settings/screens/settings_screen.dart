@@ -160,14 +160,34 @@ class SettingsScreen extends ConsumerWidget {
                 ? null
                 : () => ref.read(updateProvider.notifier).check(),
           ),
+          // 배너와 같은 두 걸음입니다. 허용 먼저, 내려받기는 그다음.
           if (update.phase == UpdatePhase.available)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: FilledButton.icon(
+                onPressed: () => ref.read(updateProvider.notifier).start(),
+                icon: const Icon(Icons.system_update),
+                label: Text('지금 업데이트 (${update.release?.sizeLabel ?? ''})'),
+              ),
+            ),
+          if (update.phase == UpdatePhase.needsPermission)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: FilledButton.icon(
+                onPressed: () =>
+                    ref.read(updateProvider.notifier).openInstallSettings(),
+                icon: const Icon(Icons.lock_open),
+                label: const Text('설치 허용 설정 열기'),
+              ),
+            ),
+          if (update.phase == UpdatePhase.ready)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: FilledButton.icon(
                 onPressed: () =>
                     ref.read(updateProvider.notifier).downloadAndInstall(),
                 icon: const Icon(Icons.download),
-                label: Text('지금 업데이트 (${update.release?.sizeLabel ?? ''})'),
+                label: Text('다운로드 (${update.release?.sizeLabel ?? ''})'),
               ),
             ),
 
@@ -221,6 +241,10 @@ class SettingsScreen extends ConsumerWidget {
       case UpdatePhase.available:
         return '새 버전 ${state.release?.buildNumber} 이 있습니다 '
             '(현재 ${state.currentBuild}).';
+      case UpdatePhase.needsPermission:
+        return '설치를 허용해야 합니다 — 아래 버튼으로 설정을 여세요.';
+      case UpdatePhase.ready:
+        return '설치 허용됨. 이제 내려받을 수 있습니다.';
       case UpdatePhase.downloading:
         return '받는 중 ${(state.progress * 100).toStringAsFixed(0)}%';
       case UpdatePhase.installing:

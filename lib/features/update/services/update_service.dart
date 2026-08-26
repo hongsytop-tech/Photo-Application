@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:photo_application/features/update/models/app_release.dart';
@@ -147,6 +148,43 @@ class UpdateService {
       return file;
     } finally {
       client.close();
+    }
+  }
+
+  /// "출처를 알 수 없는 앱" 설치가 이 앱에 허용되어 있는지.
+  ///
+  /// 갤럭시는 여기에 "자동 차단"(Auto Blocker)이 한 겹 더 있습니다. 자동
+  /// 차단이 켜져 있으면 이 허용 스위치 자체가 잠깁니다.
+  Future<bool> canInstallPackages() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      return await Permission.requestInstallPackages.isGranted;
+    } catch (error) {
+      // 확인하지 못했다고 업데이트를 막지는 않습니다. 이미 허용된 기기에서
+      // 영영 못 받게 되는 쪽이 더 나쁩니다. 막히면 설치 화면에서 걸립니다.
+      debugPrint('설치 권한 확인 실패: $error');
+      return true;
+    }
+  }
+
+  /// 설치 허용 화면을 열고, 돌아온 뒤의 허용 여부를 돌려줍니다.
+  ///
+  /// 안드로이드 8 이상에서는 앱마다 따로 허용해야 합니다. 이 요청은
+  /// `ACTION_MANAGE_UNKNOWN_APP_SOURCES` 화면으로 보내고, 그 화면에서
+  /// 돌아올 때까지 기다립니다.
+  Future<bool> requestInstallPermission() async {
+    if (!Platform.isAndroid) return true;
+    try {
+      final status = await Permission.requestInstallPackages.request();
+      if (status.isGranted) return true;
+
+      // 스위치가 잠겨 있어 그 화면에서 손쓸 수 없는 경우(자동 차단 등)에는
+      // 앱 정보 화면이라도 열어 줍니다.
+      if (status.isPermanentlyDenied) await openAppSettings();
+      return false;
+    } catch (error) {
+      debugPrint('설치 권한 요청 실패: $error');
+      return false;
     }
   }
 
