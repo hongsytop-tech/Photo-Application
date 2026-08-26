@@ -3,7 +3,7 @@
 
 `flutter create` 가 넣어 주는 아이콘은 어느 Flutter 프로젝트나 똑같아서, 같은
 방식으로 만든 다른 앱과 홈 화면에서 구분되지 않습니다. 사진을 다루는 앱이라는
-것이 아이콘만 보고도 보이도록 사진 카드(산과 해)를 그립니다.
+것이 아이콘만 보고도 보이도록 즉석카메라를 그립니다.
 
 **그림을 파일이 아니라 코드로 두는 이유.** 이 저장소에는 android/ 폴더가 없고
 빌드할 때마다 `flutter create` 로 새로 만듭니다. 그래서 아이콘도 매번 다시
@@ -41,27 +41,36 @@ DENSITIES = {
 }
 
 # --- 색 -------------------------------------------------------------------
-# 파랑 바탕에 초록 산과 노란 해. 원색끼리 붙여 놓아야 작은 크기에서도 서로
-# 밀어내며 또렷하게 보입니다. 색을 낮추면 멀리서는 회색 덩어리가 됩니다.
-BG_TOP = (0x2E, 0x8B, 0xFF)
-BG_BOTTOM = (0x0A, 0x3F, 0xE8)
-CARD = (0xFF, 0xFF, 0xFF)
-SKY = (0xD5, 0xEB, 0xFF)
-MOUNTAIN = (0x0A, 0xA5, 0x4B)
-MOUNTAIN_FAR = (0x3C, 0xDE, 0x7C)
-SUN = (0xFF, 0xC1, 0x07)
+# 하늘색에서 파랑으로 내려오는 바탕 위에 흰 카메라. 몸체를 흰색으로 두어야
+# 어떤 파랑에서도 형태가 또렷하게 뜹니다.
+BG_TOP = (0xB4, 0xE7, 0xFF)
+BG_BOTTOM = (0x3A, 0x8B, 0xFF)
+BODY = (0xFF, 0xFF, 0xFF)
+PANEL = (0x2B, 0x3C, 0x5E)
+LENS = (0x1B, 0x25, 0x3D)
+GLASS = (0x8E, 0xE3, 0xFF)
+GLINT = (0xFF, 0xFF, 0xFF)
+STRIPES = [
+    (0xFF, 0x6F, 0xAC),
+    (0xFF, 0xC1, 0x07),
+    (0x2B, 0xC9, 0xA0),
+]
 
 # --- 그림 (72 단위 정사각형 안에서 정의) ----------------------------------
-# 적응형 아이콘의 안전 영역은 108dp 캔버스 한가운데 지름 72dp 원입니다. 카드가
+# 적응형 아이콘의 안전 영역은 108dp 캔버스 한가운데 지름 72dp 원입니다. 몸체가
 # 그 원 밖으로 나가면 기기 모양(원/스퀘어클)에 따라 모서리가 잘립니다.
-# 52x40 이면 반대각선이 32.8 로 반지름 36 안에 여유 있게 들어갑니다.
+# 50x44 면 반대각선이 33.3 으로 반지름 36 안에 들어갑니다.
 ART = 72.0
-CARD_BOX = (36.0, 36.0, 26.0, 20.0, 5.5)   # cx, cy, 반너비, 반높이, 모서리
-PHOTO_BOX = (36.0, 36.0, 22.0, 16.0, 2.5)
-SUN_C = (47.0, 27.5, 4.5)                   # cx, cy, r
-FLOOR = 52.0                                # 사진 영역 아래쪽
-PEAK_NEAR = [(16.0, FLOOR), (30.0, 30.0), (44.0, FLOOR)]
-PEAK_FAR = [(36.0, FLOOR), (47.0, 37.5), (58.0, FLOOR)]
+BODY_BOX = (36.0, 37.0, 25.0, 22.0, 7.0)   # cx, cy, 반너비, 반높이, 모서리
+PANEL_BOX = (36.0, 32.0, 19.0, 13.0, 4.0)  # 렌즈가 앉는 어두운 판
+LENS_C = (36.0, 32.0, 9.5)                  # cx, cy, r
+GLASS_C = (36.0, 32.0, 5.5)
+GLINT_C = (33.0, 29.0, 2.4)
+# 아래쪽 색 띠. 즉석카메라의 장난감스러운 인상은 거의 이 셋에서 나옵니다.
+STRIPE_Y = 51.0
+STRIPE_X0 = 20.5
+STRIPE_GAP = 4.2
+STRIPE_BOX = (1.7, 3.2, 0.8)                # 반너비, 반높이, 모서리
 
 
 # --- 도형의 부호 있는 거리 -------------------------------------------------
@@ -76,39 +85,9 @@ def sd_circle(px, py, cx, cy, r):
     return math.hypot(px - cx, py - cy) - r
 
 
-def sd_triangle(px, py, tri):
-    worst = -1e9
-    for i in range(3):
-        ax, ay = tri[i]
-        bx, by = tri[(i + 1) % 3]
-        ex, ey = bx - ax, by - ay
-        length = math.hypot(ex, ey) or 1e-9
-        worst = max(worst, ((px - ax) * ey - (py - ay) * ex) / length)
-    return worst
-
-
 def coverage(d):
     """거리를 0..1 덮임으로. 경계 한 픽셀에 걸쳐 부드럽게 넘어갑니다."""
     return min(1.0, max(0.0, 0.5 - d))
-
-
-def _inside_negative(tri):
-    """안쪽이 음수가 되도록 세 점의 순서를 맞춥니다.
-
-    화면 좌표는 y 가 아래로 커져서 감는 방향을 손으로 따지면 부호를 틀리기
-    쉽습니다(실제로 처음에 틀려서 산이 통째로 사라졌습니다). 중심점을
-    sd_triangle 에 넣어 직접 확인하고 필요하면 뒤집습니다.
-    """
-    cx = sum(p[0] for p in tri) / 3.0
-    cy = sum(p[1] for p in tri) / 3.0
-    flipped = [tri[0], tri[2], tri[1]]
-    result = tri if sd_triangle(cx, cy, tri) < 0 else flipped
-    assert sd_triangle(cx, cy, result) < 0, '삼각형 방향을 잡지 못했습니다.'
-    return list(result)
-
-
-PEAK_NEAR = _inside_negative(PEAK_NEAR)
-PEAK_FAR = _inside_negative(PEAK_FAR)
 
 
 # --- 캔버스 ---------------------------------------------------------------
@@ -201,50 +180,49 @@ def write_png(path, canvas):
 # --- 장면 -----------------------------------------------------------------
 
 def art_shapes(scale, offset):
-    """72 단위 그림을 픽셀 좌표로 옮긴 도형들을 돌려줍니다."""
+    """72 단위 그림을 픽셀 좌표로 옮긴 (도형, 경계상자) 들을 돌려줍니다."""
 
     def to_px(u):
         return offset + u * scale
 
-    def rrect(box):
-        cx, cy, hw, hh, r = box
-        return (lambda px, py: sd_round_rect(
+    def rrect(cx, cy, hw, hh, r):
+        shape = (lambda px, py: sd_round_rect(
             px, py, to_px(cx), to_px(cy), hw * scale, hh * scale, r * scale))
+        box = (to_px(cx - hw), to_px(cy - hh), to_px(cx + hw), to_px(cy + hh))
+        return shape, box
 
-    def rrect_bbox(box):
-        cx, cy, hw, hh, _ = box
-        return (to_px(cx - hw), to_px(cy - hh), to_px(cx + hw), to_px(cy + hh))
+    def circ(cx, cy, r):
+        shape = lambda px, py: sd_circle(px, py, to_px(cx), to_px(cy),
+                                         r * scale)
+        box = (to_px(cx - r), to_px(cy - r), to_px(cx + r), to_px(cy + r))
+        return shape, box
 
-    def tri(points):
-        pts = [(to_px(x), to_px(y)) for x, y in points]
-        return lambda px, py: sd_triangle(px, py, pts)
-
-    def tri_bbox(points):
-        xs = [to_px(x) for x, _ in points]
-        ys = [to_px(y) for _, y in points]
-        return (min(xs), min(ys), max(xs), max(ys))
-
-    cx, cy, r = SUN_C
-    sun = lambda px, py: sd_circle(px, py, to_px(cx), to_px(cy), r * scale)
-    sun_bbox = (to_px(cx - r), to_px(cy - r), to_px(cx + r), to_px(cy + r))
-
-    return {
-        'card': (rrect(CARD_BOX), rrect_bbox(CARD_BOX)),
-        'photo': (rrect(PHOTO_BOX), rrect_bbox(PHOTO_BOX)),
-        'sun': (sun, sun_bbox),
-        'near': (tri(PEAK_NEAR), tri_bbox(PEAK_NEAR)),
-        'far': (tri(PEAK_FAR), tri_bbox(PEAK_FAR)),
+    shapes = {
+        'body': rrect(*BODY_BOX),
+        'panel': rrect(*PANEL_BOX),
+        'lens': circ(*LENS_C),
+        'glass': circ(*GLASS_C),
+        'glint': circ(*GLINT_C),
     }
+    hw, hh, r = STRIPE_BOX
+    for i in range(len(STRIPES)):
+        shapes['stripe%d' % i] = rrect(
+            STRIPE_X0 + i * STRIPE_GAP, STRIPE_Y, hw, hh, r)
+    return shapes
 
 
 def paint_art(canvas, scale, offset):
     s = art_shapes(scale, offset)
-    photo_shape, _ = s['photo']
-    canvas.draw(s['card'][0], CARD, bbox=s['card'][1])
-    canvas.draw(s['photo'][0], SKY, bbox=s['photo'][1])
-    canvas.draw(s['sun'][0], SUN, clip=photo_shape, bbox=s['sun'][1])
-    canvas.draw(s['far'][0], MOUNTAIN_FAR, clip=photo_shape, bbox=s['far'][1])
-    canvas.draw(s['near'][0], MOUNTAIN, clip=photo_shape, bbox=s['near'][1])
+    panel = s['panel'][0]
+    canvas.draw(s['body'][0], BODY, bbox=s['body'][1])
+    canvas.draw(panel, PANEL, bbox=s['panel'][1])
+    # 렌즈는 판 안쪽으로만. 판 모서리를 넘어가면 몸체 위에 떠 보입니다.
+    canvas.draw(s['lens'][0], LENS, clip=panel, bbox=s['lens'][1])
+    canvas.draw(s['glass'][0], GLASS, clip=panel, bbox=s['glass'][1])
+    canvas.draw(s['glint'][0], GLINT, clip=panel, bbox=s['glint'][1])
+    for i, color in enumerate(STRIPES):
+        shape, box = s['stripe%d' % i]
+        canvas.draw(shape, color, bbox=box)
 
 
 def render_foreground(px):
@@ -256,34 +234,41 @@ def render_foreground(px):
 
 
 def render_legacy(px):
-    """옛 아이콘. 마스크가 없으므로 배경까지 직접 그리고 여백을 줄입니다."""
+    """옛 아이콘. 마스크가 없으므로 배경까지 직접 그리고 여백을 줄입니다.
+
+    적응형 쪽은 보이는 영역이 108 중 가운데 72 라 몸체가 그 안에서 69% 를
+    차지합니다. 옛 아이콘도 비슷하게 보이도록 그림을 키웁니다.
+    """
     canvas = Canvas(px)
     canvas.fill_rect_gradient(BG_TOP, BG_BOTTOM, radius=px * 0.22)
-    scale = px * 0.86 / ART
-    paint_art(canvas, scale, offset=px * 0.07)
+    scale = px * 0.95 / ART
+    paint_art(canvas, scale, offset=px * 0.025)
     return canvas
 
 
 def render_monochrome(px):
     """테마 아이콘. 시스템이 한 가지 색으로 칠하므로 실루엣만 남깁니다.
 
-    카드를 통째로 칠하면 그냥 둥근 사각형 덩어리가 되어 무엇인지 알 수 없습니다.
-    테두리로만 그리고 안에 산과 해를 채웁니다.
+    색을 못 쓰니 겹쳐 그리는 방식이 통하지 않습니다. 흰 몸체 위에 어두운 판을
+    얹던 것을 그대로 흰색으로 바꾸면 판까지 흰색이 되어 그냥 둥근 사각형
+    덩어리가 됩니다. 그래서 몸체를 통으로 칠하고 렌즈와 색 띠 자리를 **뚫습니다.**
+    뚫린 자리로 배경색이 비쳐 카메라로 읽힙니다.
     """
     canvas = Canvas(px)
     scale = px / 108.0
-    offset = 18.0 * scale
-    s = art_shapes(scale, offset)
-    outer, outer_bbox = s['card']
-    inner = s['photo'][0]
-    white = (0xFF, 0xFF, 0xFF)
+    s = art_shapes(scale, 18.0 * scale)
 
-    # 테두리 = 바깥 사각형에서 안쪽 사각형을 뺀 것.
-    ring = lambda px_, py_: max(outer(px_, py_), -inner(px_, py_))
-    canvas.draw(ring, white, bbox=outer_bbox)
-    canvas.draw(s['sun'][0], white, clip=inner, bbox=s['sun'][1])
-    canvas.draw(s['near'][0], white, clip=inner, bbox=s['near'][1])
-    canvas.draw(s['far'][0], white, clip=inner, bbox=s['far'][1])
+    body, body_box = s['body']
+    holes = [s['lens'][0]]
+    holes += [s['stripe%d' % i][0] for i in range(len(STRIPES))]
+
+    def silhouette(x, y):
+        d = body(x, y)
+        for hole in holes:
+            d = max(d, -hole(x, y))
+        return d
+
+    canvas.draw(silhouette, (0xFF, 0xFF, 0xFF), bbox=body_box)
     return canvas
 
 
