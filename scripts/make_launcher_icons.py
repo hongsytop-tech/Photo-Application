@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 """런처 아이콘을 코드로 그려 android/app/src/main/res 에 써 넣습니다.
 
-`flutter create` 가 넣어 주는 아이콘은 어느 Flutter 프로젝트나 똑같아서, 같은
-방식으로 만든 다른 앱과 홈 화면에서 구분되지 않습니다. 사진을 다루는 앱이라는
-것이 아이콘만 보고도 보이도록 즉석카메라를 그립니다.
+카메라를 든 감자 캐릭터. 오른쪽 머리에 연필을 꽂아 "사진 + 메모"를 함께
+말합니다. 초록 바탕에 크림빛 몸, 굵고 들쭉날쭉한 검정 테두리.
 
 **그림을 파일이 아니라 코드로 두는 이유.** 이 저장소에는 android/ 폴더가 없고
 빌드할 때마다 `flutter create` 로 새로 만듭니다. 그래서 아이콘도 매번 다시
 넣어야 하는데, PNG 를 커밋해 두면 무엇이 어떻게 바뀌었는지 diff 로 볼 수 없고
-크기별로 열 몇 개를 손으로 맞춰야 합니다. 코드로 그리면 색이나 모양을 한 줄
+크기별로 열 몇 개를 손으로 맞춰야 합니다. 코드로 그리면 색이나 자세를 한 줄
 고쳐 모든 밀도를 다시 뽑을 수 있습니다.
 
 표준 라이브러리만 씁니다. Pillow 나 ImageMagick 을 CI 에 더 얹지 않으려고
 PNG 인코더와 래스터라이저를 직접 두었습니다. 도형마다 부호 있는 거리(SDF)로
-픽셀 덮임을 계산하므로 확대해도 계단이 지지 않습니다.
+픽셀 덮임을 계산하므로 밀도마다 제 해상도에서 바로 그려도 경계가 매끈합니다.
 
 만드는 것:
   mipmap-<밀도>/ic_launcher.png             옛 방식(안드로이드 7 이하) 아이콘
   mipmap-<밀도>/ic_launcher_foreground.png  적응형 아이콘 앞면
   mipmap-<밀도>/ic_launcher_monochrome.png  테마 아이콘(안드로이드 13+)
   mipmap-anydpi-v26/ic_launcher.xml         적응형 아이콘 정의
-  drawable/ic_launcher_background.xml       적응형 아이콘 뒷면
+  drawable/ic_launcher_background.xml       적응형 아이콘 뒷면(단색)
 """
 
 import math
@@ -31,7 +30,6 @@ import zlib
 
 RES = 'android/app/src/main/res'
 
-# 밀도별 배율. 적응형 앞면은 108dp, 옛 아이콘은 48dp 가 기준입니다.
 DENSITIES = {
     'mdpi': 1.0,
     'hdpi': 1.5,
@@ -41,36 +39,40 @@ DENSITIES = {
 }
 
 # --- 색 -------------------------------------------------------------------
-# 하늘색에서 파랑으로 내려오는 바탕 위에 흰 카메라. 몸체를 흰색으로 두어야
-# 어떤 파랑에서도 형태가 또렷하게 뜹니다.
-BG_TOP = (0xB4, 0xE7, 0xFF)
-BG_BOTTOM = (0x3A, 0x8B, 0xFF)
-BODY = (0xFF, 0xFF, 0xFF)
-PANEL = (0x2B, 0x3C, 0x5E)
-LENS = (0x1B, 0x25, 0x3D)
-GLASS = (0x8E, 0xE3, 0xFF)
-GLINT = (0xFF, 0xFF, 0xFF)
-STRIPES = [
-    (0xFF, 0x6F, 0xAC),
-    (0xFF, 0xC1, 0x07),
-    (0x2B, 0xC9, 0xA0),
-]
+BACKDROP = (0x54, 0xE0, 0x45)
+INK = (0x14, 0x14, 0x12)          # 완전한 검정보다 살짝 눅인 먹색
+CREAM = (0xFD, 0xF8, 0xE9)
+SLATE = (0x7E, 0x94, 0xAE)
+MINT = (0xBF, 0xE8, 0xDE)
+CORAL = (0xF4, 0xA2, 0x8C)
+PENCIL = (0xE9, 0xB9, 0x5C)
+WHITE = (0xFF, 0xFF, 0xFF)
 
-# --- 그림 (72 단위 정사각형 안에서 정의) ----------------------------------
-# 적응형 아이콘의 안전 영역은 108dp 캔버스 한가운데 지름 72dp 원입니다. 몸체가
-# 그 원 밖으로 나가면 기기 모양(원/스퀘어클)에 따라 모서리가 잘립니다.
-# 50x44 면 반대각선이 33.3 으로 반지름 36 안에 들어갑니다.
+# --- 배치 (72 단위 정사각형 안에서 정의) ----------------------------------
 ART = 72.0
-BODY_BOX = (36.0, 37.0, 25.0, 22.0, 7.0)   # cx, cy, 반너비, 반높이, 모서리
-PANEL_BOX = (36.0, 32.0, 19.0, 13.0, 4.0)  # 렌즈가 앉는 어두운 판
-LENS_C = (36.0, 32.0, 9.5)                  # cx, cy, r
-GLASS_C = (36.0, 32.0, 5.5)
-GLINT_C = (33.0, 29.0, 2.4)
-# 아래쪽 색 띠. 즉석카메라의 장난감스러운 인상은 거의 이 셋에서 나옵니다.
-STRIPE_Y = 51.0
-STRIPE_X0 = 20.5
-STRIPE_GAP = 4.2
-STRIPE_BOX = (1.7, 3.2, 0.8)                # 반너비, 반높이, 모서리
+FAT = 1.10                        # 가로로 통통하게
+
+# 적응형 아이콘의 뒷면은 108dp 인데 런처는 가운데 72dp 만 오려 씁니다. 그 72dp
+# 안에서 얼마나 채울 수 있는지는 런처 모양에 달렸습니다. 실제로 재 보니 원형
+# 마스크는 1.00, 스퀘어클(갤럭시 등)은 1.22 까지 안 잘립니다. 스퀘어클에 맞춰
+# 꽉 채웁니다 — 원형 런처에서는 연필 끝이 조금 깎입니다.
+ZOOM = 1.22
+# 감자는 아래가 불룩해서 먹이 칠해진 무게중심이 캔버스 한가운데보다 아래에
+# 놓입니다. 상자가 아니라 **무게중심**을 재서 맞춘 값입니다.
+SHIFT = -3.63
+
+BODY = [(36.0, 41.0, 21.0 * FAT, 23.0),
+        (26.0 - (FAT - 1) * 10, 30.0, 12.0 * FAT, 10.5),
+        (48.0 + (FAT - 1) * 10, 35.0, 11.0 * FAT, 10.0),
+        (41.0 + (FAT - 1) * 6, 56.0, 11.5 * FAT, 8.5)]
+
+CAM = (31.5, 49.0, 11.0, 7.8)     # cx, cy, 반너비, 반높이
+PEN = dict(tipx=57.51, tipy=12.76, length=22.0, angle_deg=130.0, w=3.0)
+
+
+def widen(x, pull):
+    """몸이 불어난 만큼 바깥으로 밀어냅니다. 안 밀면 손이 몸통에 삼켜집니다."""
+    return x + (1.0 if x >= 36 else -1.0) * (FAT - 1.0) * pull
 
 
 # --- 도형의 부호 있는 거리 -------------------------------------------------
@@ -85,9 +87,63 @@ def sd_circle(px, py, cx, cy, r):
     return math.hypot(px - cx, py - cy) - r
 
 
+def sd_ellipse(px, py, cx, cy, rx, ry):
+    return (math.hypot((px - cx) / rx, (py - cy) / ry) - 1.0) * min(rx, ry)
+
+
+def sd_triangle(px, py, tri):
+    """세 반평면의 교집합. 안쪽이 음수가 되도록 방향을 맞춰 넘겨야 합니다."""
+    worst = -1e9
+    for i in range(3):
+        ax, ay = tri[i]
+        bx, by = tri[(i + 1) % 3]
+        ex, ey = bx - ax, by - ay
+        length = math.hypot(ex, ey) or 1e-9
+        worst = max(worst, ((px - ax) * ey - (py - ay) * ex) / length)
+    return worst
+
+
+def orient(tri):
+    """감는 방향을 코드가 직접 확인합니다.
+
+    화면 좌표는 y 가 아래로 커져서 손으로 따지면 부호를 틀리기 쉽습니다
+    (예전에 틀려서 도형이 통째로 사라진 적이 있습니다).
+    """
+    cx = sum(p[0] for p in tri) / 3.0
+    cy = sum(p[1] for p in tri) / 3.0
+    out = list(tri) if sd_triangle(cx, cy, tri) < 0 else [tri[0], tri[2], tri[1]]
+    assert sd_triangle(cx, cy, out) < 0, '삼각형 방향을 잡지 못했습니다.'
+    return out
+
+
+def smin(a, b, k):
+    """부드러운 합집합. 타원 여러 개를 감자처럼 이어 붙일 때 씁니다."""
+    h = max(0.0, min(1.0, 0.5 + 0.5 * (b - a) / k))
+    return b * (1 - h) + a * h - k * h * (1 - h)
+
+
 def coverage(d):
-    """거리를 0..1 덮임으로. 경계 한 픽셀에 걸쳐 부드럽게 넘어갑니다."""
     return min(1.0, max(0.0, 0.5 - d))
+
+
+# --- 손그림 잡음 -----------------------------------------------------------
+
+def _hash2(ix, iy, seed):
+    n = (ix * 374761393 + iy * 668265263 + seed * 1274126177) & 0xFFFFFFFF
+    n = ((n ^ (n >> 13)) * 1274126177) & 0xFFFFFFFF
+    return ((n ^ (n >> 16)) & 0xFFFF) / 65535.0
+
+
+def value_noise(x, y, seed):
+    ix, iy = math.floor(x), math.floor(y)
+    fx, fy = x - ix, y - iy
+    ux = fx * fx * (3 - 2 * fx)
+    uy = fy * fy * (3 - 2 * fy)
+    a = _hash2(ix, iy, seed)
+    b = _hash2(ix + 1, iy, seed)
+    c = _hash2(ix, iy + 1, seed)
+    d = _hash2(ix + 1, iy + 1, seed)
+    return (a * (1 - ux) + b * ux) * (1 - uy) + (c * (1 - ux) + d * ux) * uy
 
 
 # --- 캔버스 ---------------------------------------------------------------
@@ -99,43 +155,29 @@ class Canvas:
         self.size = size
         self.buf = [0.0] * (size * size * 4)
 
-    def fill_rect_gradient(self, top, bottom, radius):
-        n = self.size
-        for y in range(n):
-            t = y / max(n - 1, 1)
-            r = (top[0] + (bottom[0] - top[0]) * t) / 255.0
-            g = (top[1] + (bottom[1] - top[1]) * t) / 255.0
-            b = (top[2] + (bottom[2] - top[2]) * t) / 255.0
-            for x in range(n):
-                d = sd_round_rect(x + 0.5, y + 0.5, n / 2, n / 2,
-                                  n / 2, n / 2, radius)
-                a = coverage(d)
-                if a > 0:
-                    self._over(x, y, r, g, b, a)
+    def fill(self, color):
+        base = [v / 255.0 for v in color]
+        for i in range(0, self.size * self.size * 4, 4):
+            self.buf[i] = base[0]
+            self.buf[i + 1] = base[1]
+            self.buf[i + 2] = base[2]
+            self.buf[i + 3] = 1.0
 
-    def draw(self, shape, color, clip=None, bbox=None):
-        """shape(px, py) 가 거리, clip(px, py) 이 있으면 그 안쪽으로만."""
+    def draw(self, shape, color, bbox):
         n = self.size
-        x0, y0, x1, y1 = bbox if bbox else (0, 0, n, n)
-        x0 = max(0, int(x0) - 2)
-        y0 = max(0, int(y0) - 2)
-        x1 = min(n, int(x1) + 2)
-        y1 = min(n, int(y1) + 2)
+        x0 = max(0, int(bbox[0]) - 2)
+        y0 = max(0, int(bbox[1]) - 2)
+        x1 = min(n, int(bbox[2]) + 2)
+        y1 = min(n, int(bbox[3]) + 2)
         r, g, b = color[0] / 255.0, color[1] / 255.0, color[2] / 255.0
         for y in range(y0, y1):
             py = y + 0.5
             for x in range(x0, x1):
-                px = x + 0.5
-                a = coverage(shape(px, py))
-                if a <= 0:
-                    continue
-                if clip is not None:
-                    a = min(a, coverage(clip(px, py)))
-                    if a <= 0:
-                        continue
-                self._over(x, y, r, g, b, a)
+                a = coverage(shape(x + 0.5, py))
+                if a > 0:
+                    self.over(x, y, r, g, b, a)
 
-    def _over(self, x, y, r, g, b, a):
+    def over(self, x, y, r, g, b, a):
         i = (y * self.size + x) * 4
         buf = self.buf
         da = buf[i + 3]
@@ -148,17 +190,13 @@ class Canvas:
         buf[i + 3] = out_a
 
     def to_bytes(self):
-        return bytes(
-            min(255, max(0, int(v * 255 + 0.5))) for v in self.buf
-        )
+        return bytes(min(255, max(0, int(v * 255 + 0.5))) for v in self.buf)
 
 
 def write_png(path, canvas):
     n = canvas.size
     data = canvas.to_bytes()
-    raw = b''.join(
-        b'\x00' + data[y * n * 4:(y + 1) * n * 4] for y in range(n)
-    )
+    raw = b''.join(b'\x00' + data[y * n * 4:(y + 1) * n * 4] for y in range(n))
 
     def chunk(tag, payload):
         body = tag + payload
@@ -177,98 +215,223 @@ def write_png(path, canvas):
     return len(png)
 
 
-# --- 장면 -----------------------------------------------------------------
+# --- 그림 좌표계 -----------------------------------------------------------
 
-def art_shapes(scale, offset):
-    """72 단위 그림을 픽셀 좌표로 옮긴 (도형, 경계상자) 들을 돌려줍니다."""
+class Art:
+    """72 단위 그림 좌표 ↔ 픽셀. 모든 경계를 손으로 그린 것처럼 흔듭니다."""
 
-    def to_px(u):
-        return offset + u * scale
+    def __init__(self, canvas, scale, offset, zoom=ZOOM, shift=SHIFT):
+        self.c, self.s, self.o, self.z = canvas, scale, offset, zoom
+        self.dy = shift * zoom * scale
 
-    def rrect(cx, cy, hw, hh, r):
-        shape = (lambda px, py: sd_round_rect(
-            px, py, to_px(cx), to_px(cy), hw * scale, hh * scale, r * scale))
-        box = (to_px(cx - hw), to_px(cy - hh), to_px(cx + hw), to_px(cy + hh))
-        return shape, box
+    def px(self, u):
+        return self.o + (36.0 + (u - 36.0) * self.z) * self.s
 
-    def circ(cx, cy, r):
-        shape = lambda px, py: sd_circle(px, py, to_px(cx), to_px(cy),
-                                         r * scale)
-        box = (to_px(cx - r), to_px(cy - r), to_px(cx + r), to_px(cy + r))
-        return shape, box
+    def py(self, u):
+        return self.px(u) + self.dy
 
-    shapes = {
-        'body': rrect(*BODY_BOX),
-        'panel': rrect(*PANEL_BOX),
-        'lens': circ(*LENS_C),
-        'glass': circ(*GLASS_C),
-        'glint': circ(*GLINT_C),
-    }
-    hw, hh, r = STRIPE_BOX
-    for i in range(len(STRIPES)):
-        shapes['stripe%d' % i] = rrect(
-            STRIPE_X0 + i * STRIPE_GAP, STRIPE_Y, hw, hh, r)
-    return shapes
+    def art(self, p):
+        return 36.0 + ((p - self.o) / self.s - 36.0) / self.z
+
+    def art_y(self, p):
+        return self.art(p - self.dy)
+
+    def _k(self, v):
+        return v * self.z * self.s
+
+    # -- 원시 도형 (경계상자는 그림 단위로 돌려줍니다) --
+    def ell(self, cx, cy, rx, ry):
+        f = lambda x, y: sd_ellipse(x, y, self.px(cx), self.py(cy),
+                                    self._k(rx), self._k(ry))
+        r = max(rx, ry)
+        return f, (cx - r, cy - r, cx + r, cy + r)
+
+    def circ(self, cx, cy, r):
+        f = lambda x, y: sd_circle(x, y, self.px(cx), self.py(cy), self._k(r))
+        return f, (cx - r, cy - r, cx + r, cy + r)
+
+    def rrect(self, cx, cy, hw, hh, rr, rot=0.0):
+        cxp, cyp = self.px(cx), self.py(cy)
+        ca, sa = math.cos(-rot), math.sin(-rot)
+
+        def f(x, y):
+            dx, dy = x - cxp, y - cyp
+            return sd_round_rect(dx * ca - dy * sa, dx * sa + dy * ca,
+                                 0.0, 0.0, self._k(hw), self._k(hh),
+                                 self._k(rr))
+        rad = math.hypot(hw, hh)
+        return f, (cx - rad, cy - rad, cx + rad, cy + rad)
+
+    def tri(self, points):
+        pts = orient(points)
+        ppx = [(self.px(x), self.py(y)) for x, y in pts]
+        f = lambda x, y: sd_triangle(x, y, ppx)
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return f, (min(xs), min(ys), max(xs), max(ys))
+
+    def blob(self, parts, k=4.0):
+        shapes = [self.ell(*p) for p in parts]
+
+        def f(x, y):
+            d = shapes[0][0](x, y)
+            for sh, _ in shapes[1:]:
+                d = smin(d, sh(x, y), self._k(k))
+            return d
+        xs = [b[0] for _, b in shapes] + [b[2] for _, b in shapes]
+        ys = [b[1] for _, b in shapes] + [b[3] for _, b in shapes]
+        return f, (min(xs) - k, min(ys) - k, max(xs) + k, max(ys) + k)
+
+    # -- 붓질 --
+    def _rough(self, f, seed, amp):
+        """경계를 **그림 단위 좌표에서** 흔듭니다.
+
+        픽셀 좌표에서 흔들면 큰 아이콘일수록 잔물결이 곱게 나와 기기마다 손맛이
+        달라 보입니다. 좌표 해시라 난수 씨앗 없이도 매번 같은 선이 나옵니다.
+        """
+        unit = self._k(1.0)
+
+        def g(x, y):
+            ax, ay = self.art(x), self.art_y(y)
+            n = (value_noise(ax * 0.26, ay * 0.26, seed) - 0.5) * 2
+            n2 = (value_noise(ax * 0.95, ay * 0.95, seed + 13) - 0.5) * 2
+            return f(x, y) + (n * amp + n2 * amp * 0.22) * unit
+        return g
+
+    def _box(self, bb, pad):
+        x0, y0, x1, y1 = bb
+        return (self.px(x0 - pad), self.py(y0 - pad),
+                self.px(x1 + pad), self.py(y1 + pad))
+
+    def ink(self, shape, color, seed, width=1.05, amp=0.55):
+        """면을 칠하고 그 위에 굵기가 들쭉날쭉한 검정 테두리를 두릅니다."""
+        f, bb = shape
+        g = self._rough(f, seed, amp)
+        unit = self._k(1.0)
+        self.c.draw(g, color, self._box(bb, amp * 2 + 1))
+
+        def band(x, y):
+            ax, ay = self.art(x), self.art_y(y)
+            w = width * (0.80 + 0.42 * value_noise(ax * 0.5, ay * 0.5,
+                                                   seed + 31))
+            return abs(g(x, y)) - w * unit
+        self.c.draw(band, INK, self._box(bb, amp * 2 + width * 2 + 1))
+
+    def flat(self, shape, color, seed, amp=0.4):
+        """테두리 없이 면만. 눈·볼처럼 작은 요소용."""
+        f, bb = shape
+        self.c.draw(self._rough(f, seed, amp), color, self._box(bb, amp * 2 + 1))
+
+    def stroke(self, cx, cy, length, angle, width, color, seed):
+        self.flat(self.rrect(cx, cy, length / 2, width, width, angle),
+                  color, seed, amp=0.3)
+
+    def chevron(self, ax, ay, arm, width, color, seed, opening=45.0):
+        """`<` 모양 감은 눈."""
+        for i, sign in enumerate((-1, 1)):
+            ang = math.radians(sign * opening)
+            self.stroke(ax + math.cos(ang) * arm / 2,
+                        ay + math.sin(ang) * arm / 2,
+                        arm, ang, width, color, seed + i)
 
 
-def paint_art(canvas, scale, offset):
-    s = art_shapes(scale, offset)
-    panel = s['panel'][0]
-    canvas.draw(s['body'][0], BODY, bbox=s['body'][1])
-    canvas.draw(panel, PANEL, bbox=s['panel'][1])
-    # 렌즈는 판 안쪽으로만. 판 모서리를 넘어가면 몸체 위에 떠 보입니다.
-    canvas.draw(s['lens'][0], LENS, clip=panel, bbox=s['lens'][1])
-    canvas.draw(s['glass'][0], GLASS, clip=panel, bbox=s['glass'][1])
-    canvas.draw(s['glint'][0], GLINT, clip=panel, bbox=s['glint'][1])
-    for i, color in enumerate(STRIPES):
-        shape, box = s['stripe%d' % i]
-        canvas.draw(shape, color, bbox=box)
+# --- 캐릭터 ---------------------------------------------------------------
 
+def pencil(art, tipx, tipy, length, angle_deg, w):
+    """연필 한 자루. 끝은 깎아 놓은 것처럼 뾰족한 원뿔로 냅니다.
+
+    둥근 사각형으로 심을 그리면 끝이 뭉툭해서 성냥개비로 보입니다. 나무를 깎은
+    삼각형 + 그 안의 흑연 삼각형, 두 겹이라야 연필로 읽힙니다.
+    """
+    ang = math.radians(angle_deg)
+    dx, dy = math.cos(ang), math.sin(ang)
+    nx, ny = -dy, dx
+    cone = 3.4 * w / 2.1
+
+    def at(along, across=0.0):
+        return (tipx + dx * along + nx * across, tipy + dy * along + ny * across)
+
+    b0, b1 = cone, length * 0.94
+    bx, by = at((b0 + b1) / 2)
+    art.ink(art.rrect(bx, by, (b1 - b0) / 2, w, 0.7, ang), PENCIL, 40,
+            width=0.95, amp=0.32)
+    art.ink(art.tri([at(0.0), at(cone, w), at(cone, -w)]), CREAM, 41,
+            width=0.8, amp=0.22)
+    art.flat(art.tri([at(0.0), at(cone * 0.45, w * 0.45),
+                      at(cone * 0.45, -w * 0.45)]), INK, 43, amp=0.16)
+    ex, ey = at(length * 0.97)
+    art.ink(art.rrect(ex, ey, w * 0.75, w * 0.95, 0.7, ang), CORAL, 42,
+            width=0.8, amp=0.28)
+
+
+def draw(art):
+    # 연필을 몸통보다 **먼저** 그립니다. 그래야 아래 절반이 머리에 가려져 뒤에
+    # 꽂힌 것처럼 보입니다. 나중에 그리면 얼굴 위에 얹힌 막대가 됩니다.
+    pencil(art, **PEN)
+
+    art.ink(art.blob(BODY), CREAM, seed=1, width=1.30, amp=0.50)
+
+    art.flat(art.circ(widen(28.5, 6), 30.5, 3.0), INK, 80, amp=0.28)
+    art.flat(art.circ(widen(27.5, 6), 29.5, 1.05), CREAM, 81, amp=0.2)
+    art.chevron(widen(41.6, 6), 30.5, 4.6, 0.9, INK, 82)
+    art.flat(art.circ(widen(20.5, 16), 35.5, 2.9), CORAL, 84, amp=0.35)
+    art.flat(art.circ(widen(51.5, 16), 35.5, 2.9), CORAL, 85, amp=0.35)
+
+    cx, cy, hw, hh = CAM
+    art.ink(art.rrect(cx, cy - hh - 1.6, 3.0, 2.0, 1.2), SLATE, 10,
+            width=0.8, amp=0.3)
+    art.ink(art.rrect(cx, cy, hw, hh, 2.6), SLATE, 11, width=1.05, amp=0.40)
+    art.ink(art.circ(cx, cy, hh * 0.60), MINT, 12, width=0.85, amp=0.32)
+    art.flat(art.circ(cx - hh * 0.18, cy - hh * 0.20, hh * 0.20), CREAM, 13,
+             amp=0.22)
+    art.ink(art.circ(cx - hw - 1.6, cy + 3.2, 3.7), CREAM, 50,
+            width=1.0, amp=0.42)
+    art.ink(art.circ(cx + hw + 1.6, cy + 3.2, 3.7), CREAM, 51,
+            width=1.0, amp=0.42)
+
+
+# --- 출력 -----------------------------------------------------------------
 
 def render_foreground(px):
-    """적응형 앞면. 108dp 캔버스 한가운데에 72 단위 그림을 놓습니다."""
+    """적응형 앞면. 108dp 캔버스 한가운데 72dp 안에 그림을 놓습니다."""
     canvas = Canvas(px)
-    scale = px / 108.0
-    paint_art(canvas, scale, offset=18.0 * scale)
+    draw(Art(canvas, px / 108.0, 18.0 * px / 108.0))
     return canvas
 
 
-def render_legacy(px):
-    """옛 아이콘. 마스크가 없으므로 배경까지 직접 그리고 여백을 줄입니다.
+def render_legacy(px, foreground):
+    """옛 아이콘. 마스크가 없으므로 배경까지 직접 그립니다.
 
-    적응형 쪽은 보이는 영역이 108 중 가운데 72 라 몸체가 그 안에서 69% 를
-    차지합니다. 옛 아이콘도 비슷하게 보이도록 그림을 키웁니다.
+    모서리를 깎지 않고 정사각형을 꽉 채웁니다. 어느 안드로이드에서도 아이콘
+    바탕이 초록으로 끝까지 차 있어야 같은 앱으로 보입니다.
     """
     canvas = Canvas(px)
-    canvas.fill_rect_gradient(BG_TOP, BG_BOTTOM, radius=px * 0.22)
-    scale = px * 0.95 / ART
-    paint_art(canvas, scale, offset=px * 0.025)
+    canvas.fill(BACKDROP)
+    draw(Art(canvas, px / 72.0, 0.0))
     return canvas
 
 
-def render_monochrome(px):
-    """테마 아이콘. 시스템이 한 가지 색으로 칠하므로 실루엣만 남깁니다.
+def render_monochrome(px, foreground):
+    """테마 아이콘. 시스템이 한 가지 색으로 칠합니다.
 
-    색을 못 쓰니 겹쳐 그리는 방식이 통하지 않습니다. 흰 몸체 위에 어두운 판을
-    얹던 것을 그대로 흰색으로 바꾸면 판까지 흰색이 되어 그냥 둥근 사각형
-    덩어리가 됩니다. 그래서 몸체를 통으로 칠하고 렌즈와 색 띠 자리를 **뚫습니다.**
-    뚫린 자리로 배경색이 비쳐 카메라로 읽힙니다.
+    색을 못 쓰니 겹쳐 그리는 방식이 통하지 않습니다. 앞면을 그대로 흰색으로
+    바꾸면 몸도 카메라도 전부 흰색이 되어 덩어리가 됩니다. 그래서 **먹선 자리만
+    비웁니다** — 흰 실루엣에 검은 선이 구멍으로 남아 배경색이 비칩니다.
     """
     canvas = Canvas(px)
-    scale = px / 108.0
-    s = art_shapes(scale, 18.0 * scale)
-
-    body, body_box = s['body']
-    holes = [s['lens'][0]]
-    holes += [s['stripe%d' % i][0] for i in range(len(STRIPES))]
-
-    def silhouette(x, y):
-        d = body(x, y)
-        for hole in holes:
-            d = max(d, -hole(x, y))
-        return d
-
-    canvas.draw(silhouette, (0xFF, 0xFF, 0xFF), bbox=body_box)
+    src = foreground.buf
+    out = canvas.buf
+    for i in range(0, px * px * 4, 4):
+        a = src[i + 3]
+        if a <= 0:
+            continue
+        lum = 0.299 * src[i] + 0.587 * src[i + 1] + 0.114 * src[i + 2]
+        # 어두운 곳(먹선)일수록 0 에 가깝게. 0.25~0.45 사이에서 부드럽게.
+        keep = min(1.0, max(0.0, (lum - 0.25) / 0.20))
+        if keep <= 0:
+            continue
+        out[i] = out[i + 1] = out[i + 2] = 1.0
+        out[i + 3] = a * keep
     return canvas
 
 
@@ -280,23 +443,17 @@ ADAPTIVE_XML = '''<?xml version="1.0" encoding="utf-8"?>
 </adaptive-icon>
 '''
 
-# 옛 아이콘과 같은 그라데이션을 뒷면에도 씁니다. 단색으로 두면 안드로이드 8 이상
-# 에서만 배경이 밋밋해져 같은 앱인데 기기마다 달라 보입니다.
 BACKGROUND_XML = '''<?xml version="1.0" encoding="utf-8"?>
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:angle="270"
-        android:startColor="#%02X%02X%02X"
-        android:endColor="#%02X%02X%02X"
-        android:type="linear"/>
+    <solid android:color="#%02X%02X%02X"/>
 </shape>
-''' % (BG_TOP + BG_BOTTOM)
+''' % BACKDROP
 
 
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else RES
-    if not os.path.isdir(os.path.dirname(root)) and not os.path.isdir(root):
+    if not os.path.isdir(os.path.dirname(root) or '.') and not os.path.isdir(root):
         print('❌ %s 가 없습니다. flutter create 를 먼저 실행하세요.' % root,
               file=sys.stderr)
         return 1
@@ -304,12 +461,14 @@ def main():
     made = 0
     for density, mult in DENSITIES.items():
         out = os.path.join(root, 'mipmap-' + density)
-        made += bool(write_png(os.path.join(out, 'ic_launcher.png'),
-                               render_legacy(round(48 * mult))))
+        # 앞면을 한 번만 그려 테마 아이콘까지 함께 씁니다.
+        foreground = render_foreground(round(108 * mult))
         made += bool(write_png(os.path.join(out, 'ic_launcher_foreground.png'),
-                               render_foreground(round(108 * mult))))
+                               foreground))
         made += bool(write_png(os.path.join(out, 'ic_launcher_monochrome.png'),
-                               render_monochrome(round(108 * mult))))
+                               render_monochrome(foreground.size, foreground)))
+        made += bool(write_png(os.path.join(out, 'ic_launcher.png'),
+                               render_legacy(round(48 * mult), foreground)))
 
     xml_dir = os.path.join(root, 'mipmap-anydpi-v26')
     os.makedirs(xml_dir, exist_ok=True)
