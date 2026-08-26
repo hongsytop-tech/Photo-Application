@@ -35,3 +35,7 @@ android/app/release/
 .vscode/
 *.iml
 .DS_Store
+
+# 파이썬 스크립트를 import 로 불러 확인할 때 생깁니다
+__pycache__/
+*.pyc

@@ -85,6 +85,26 @@ jobs:
       - name: 사진 권한 주입
         run: bash scripts/patch_android_manifest.sh
 
+      # flutter create 가 넣는 아이콘은 어느 Flutter 앱이나 똑같아서 홈 화면에서
+      # 다른 앱과 구분되지 않는다. 표준 라이브러리만 쓰는 스크립트라 러너에
+      # 이미지 도구를 따로 얹지 않는다.
+      - name: 런처 아이콘 생성
+        run: |
+          python3 scripts/make_launcher_icons.py
+
+          RES=android/app/src/main/res
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            for f in ic_launcher ic_launcher_foreground ic_launcher_monochrome; do
+              test -s "$RES/mipmap-$d/$f.png" \
+                || { echo "❌ mipmap-$d/$f.png 가 없습니다."; exit 1; }
+            done
+          done
+          test -s "$RES/mipmap-anydpi-v26/ic_launcher.xml" \
+            || { echo "❌ 적응형 아이콘 정의가 없습니다."; exit 1; }
+          test -s "$RES/values/ic_launcher_background.xml" \
+            || { echo "❌ 적응형 아이콘 배경색이 없습니다."; exit 1; }
+          echo "✅ 아이콘 17개 검증 통과"
+
       - name: 서명 keystore 준비
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

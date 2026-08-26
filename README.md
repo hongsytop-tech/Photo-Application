@@ -149,6 +149,7 @@ Actions 에 맡깁니다.
 cp .env.example .env          # 백엔드를 안 쓸 거면 값은 비워 둬도 됩니다
 flutter create . --project-name photo_application --org com.hongsytop --platforms=android
 bash scripts/patch_android_manifest.sh    # 사진 권한 주입
+python3 scripts/make_launcher_icons.py    # 런처 아이콘 생성
 python3 scripts/patch_android_signing.py  # 릴리스 서명 설정
 flutter pub get
 flutter run                   # 연결된 기기에서 실행
@@ -183,7 +184,7 @@ lib/
     settings/  스캔·계정·초기화
     shell/     하단 탭
 supabase/migrations/0001_photo_metadata.sql
-scripts/       CI 에서 android/ 를 패치하는 스크립트
+scripts/       CI 에서 android/ 를 만들어 채우는 스크립트 (권한·서명·아이콘)
 ```
 
 ## 설계에서 중요한 두 가지
