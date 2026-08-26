@@ -61,7 +61,7 @@ if n != 1:
     sys.exit(1)
 
 # 앱 이름을 한국어로
-s = re.sub(r'android:label="[^"]*"', 'android:label="사진 정리"', s, count=1)
+s = re.sub(r'android:label="[^"]*"', 'android:label="마이모먼트"', s, count=1)
 
 with open(path, 'w', encoding='utf-8') as f:
     f.write(s)
@@ -74,3 +74,7 @@ for perm in READ_MEDIA_IMAGES READ_MEDIA_VISUAL_USER_SELECTED READ_EXTERNAL_STOR
   grep -q "$perm" "$MANIFEST" || { echo "❌ 검증 실패: $perm 권한이 없습니다." >&2; exit 1; }
 done
 echo "✅ 권한 6종 검증 통과"
+
+grep -q 'android:label="마이모먼트"' "$MANIFEST" \
+  || { echo "❌ 검증 실패: 앱 이름이 바뀌지 않았습니다." >&2; exit 1; }
+echo "✅ 앱 이름 검증 통과"

@@ -101,8 +101,8 @@ jobs:
           done
           test -s "$RES/mipmap-anydpi-v26/ic_launcher.xml" \
             || { echo "❌ 적응형 아이콘 정의가 없습니다."; exit 1; }
-          test -s "$RES/values/ic_launcher_background.xml" \
-            || { echo "❌ 적응형 아이콘 배경색이 없습니다."; exit 1; }
+          test -s "$RES/drawable/ic_launcher_background.xml" \
+            || { echo "❌ 적응형 아이콘 배경이 없습니다."; exit 1; }
           echo "✅ 아이콘 17개 검증 통과"
 
       - name: 서명 keystore 준비

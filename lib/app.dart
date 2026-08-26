@@ -58,7 +58,7 @@ class _PhotoAppState extends ConsumerState<PhotoApp> {
     });
 
     return MaterialApp(
-      title: '사진 정리',
+      title: '마이모먼트',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,

@@ -20,7 +20,7 @@ PNG 인코더와 래스터라이저를 직접 두었습니다. 도형마다 부�
   mipmap-<밀도>/ic_launcher_foreground.png  적응형 아이콘 앞면
   mipmap-<밀도>/ic_launcher_monochrome.png  테마 아이콘(안드로이드 13+)
   mipmap-anydpi-v26/ic_launcher.xml         적응형 아이콘 정의
-  values/ic_launcher_background.xml         적응형 아이콘 뒷면 색
+  drawable/ic_launcher_background.xml       적응형 아이콘 뒷면
 """
 
 import math
@@ -41,14 +41,15 @@ DENSITIES = {
 }
 
 # --- 색 -------------------------------------------------------------------
-# 앱 테마의 시드(0xFF4C6EF5) 계열로 맞춥니다.
-BG_TOP = (0x5B, 0x7C, 0xFA)
-BG_BOTTOM = (0x33, 0x4B, 0xD6)
+# 파랑 바탕에 초록 산과 노란 해. 원색끼리 붙여 놓아야 작은 크기에서도 서로
+# 밀어내며 또렷하게 보입니다. 색을 낮추면 멀리서는 회색 덩어리가 됩니다.
+BG_TOP = (0x2E, 0x8B, 0xFF)
+BG_BOTTOM = (0x0A, 0x3F, 0xE8)
 CARD = (0xFF, 0xFF, 0xFF)
-SKY = (0xE9, 0xEF, 0xFF)
-MOUNTAIN = (0x2B, 0x3C, 0x9E)
-MOUNTAIN_FAR = (0x5B, 0x7C, 0xFA)
-SUN = (0xFF, 0xB0, 0x2E)
+SKY = (0xD5, 0xEB, 0xFF)
+MOUNTAIN = (0x0A, 0xA5, 0x4B)
+MOUNTAIN_FAR = (0x3C, 0xDE, 0x7C)
+SUN = (0xFF, 0xC1, 0x07)
 
 # --- 그림 (72 단위 정사각형 안에서 정의) ----------------------------------
 # 적응형 아이콘의 안전 영역은 108dp 캔버스 한가운데 지름 72dp 원입니다. 카드가
@@ -288,17 +289,24 @@ def render_monochrome(px):
 
 ADAPTIVE_XML = '''<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background"/>
+    <background android:drawable="@drawable/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
     <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>
 '''
 
+# 옛 아이콘과 같은 그라데이션을 뒷면에도 씁니다. 단색으로 두면 안드로이드 8 이상
+# 에서만 배경이 밋밋해져 같은 앱인데 기기마다 달라 보입니다.
 BACKGROUND_XML = '''<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="ic_launcher_background">#4358E0</color>
-</resources>
-'''
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:startColor="#%02X%02X%02X"
+        android:endColor="#%02X%02X%02X"
+        android:type="linear"/>
+</shape>
+''' % (BG_TOP + BG_BOTTOM)
 
 
 def main():
@@ -324,9 +332,9 @@ def main():
               encoding='utf-8') as f:
         f.write(ADAPTIVE_XML)
 
-    values_dir = os.path.join(root, 'values')
-    os.makedirs(values_dir, exist_ok=True)
-    with open(os.path.join(values_dir, 'ic_launcher_background.xml'), 'w',
+    drawable_dir = os.path.join(root, 'drawable')
+    os.makedirs(drawable_dir, exist_ok=True)
+    with open(os.path.join(drawable_dir, 'ic_launcher_background.xml'), 'w',
               encoding='utf-8') as f:
         f.write(BACKGROUND_XML)
 
