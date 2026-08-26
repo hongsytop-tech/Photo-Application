@@ -88,26 +88,26 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
     });
   }
 
-  /// 선택된 asset 들의 photo_key 집합. 같은 사진의 복사본이 함께 선택되면
-  /// 키가 겹치므로 Set 으로 접습니다.
-  List<String> _selectedPhotoKeys() {
-    final items = ref.read(photoListProvider(widget.query)).items;
-    return items
-        .where((item) => _selected.contains(item.assetId))
-        .map((item) => item.photoKey)
-        .toSet()
-        .toList();
-  }
+  /// 선택된 asset 들의 photo_key 집합.
+  ///
+  /// 화면에 읽어온 항목만 훑지 않고 DB 에 물어봅니다. 중복 사진 고르기처럼
+  /// 아직 스크롤이 닿지 않은 사진까지 선택될 수 있어서, 로드된 것만 보면
+  /// 태그·폴더가 일부에만 붙습니다. 같은 사진의 복사본은 키가 겹치므로
+  /// 조회 쪽에서 DISTINCT 로 접힙니다.
+  Future<List<String>> _selectedPhotoKeys() =>
+      ref.read(photoQueryServiceProvider).photoKeysOf(_selected);
 
   Future<void> _bulkTag() async {
-    final keys = _selectedPhotoKeys();
+    final keys = await _selectedPhotoKeys();
+    if (!mounted) return;
     if (keys.isEmpty) return;
     final saved = await TagPickerSheet.show(context, keys);
     if (saved ?? false) _clearSelection();
   }
 
   Future<void> _bulkFolder() async {
-    final keys = _selectedPhotoKeys();
+    final keys = await _selectedPhotoKeys();
+    if (!mounted) return;
     if (keys.isEmpty) return;
     final saved = await FolderPickerSheet.show(context, keys);
     if (saved ?? false) _clearSelection();
@@ -178,6 +178,29 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// 같은 사진의 복사본을 한 번에 골라 줍니다.
+  ///
+  /// 그룹마다 한 장은 남기고 나머지만 고릅니다. 전부 고르면 지웠을 때 사진이
+  /// 통째로 사라집니다 — 중복을 정리하려던 사람이 원한 결과가 아닙니다.
+  Future<void> _selectDuplicates() async {
+    final ids = await ref
+        .read(photoQueryServiceProvider)
+        .duplicateAssetIds(widget.query);
+    if (!mounted) return;
+
+    if (ids.isEmpty) {
+      _say('중복된 사진이 없습니다.');
+      return;
+    }
+    setState(() {
+      _selectionMode = true;
+      _selected
+        ..clear()
+        ..addAll(ids);
+    });
+    _say('중복 사진 ${ids.length}장을 골랐습니다. 원본 한 장씩은 남겨 두었습니다.');
+  }
+
   void _open(int index) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -244,7 +267,14 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
                     ),
                   ],
                 ),
-                actions: widget.actions,
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.filter_none),
+                    onPressed: _selectDuplicates,
+                    tooltip: '중복 사진 고르기',
+                  ),
+                  ...widget.actions,
+                ],
               ),
         body: PhotoGrid(
           query: widget.query,

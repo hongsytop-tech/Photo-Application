@@ -129,6 +129,50 @@ class PhotoQueryService {
     return (rows.first['c'] as int?) ?? 0;
   }
 
+  /// 같은 사진의 복사본 중 **그룹마다 한 장을 뺀 나머지** asset id.
+  ///
+  /// photo_key 가 같으면 같은 사진입니다 (파일명·촬영시각·해상도로 만든 키).
+  /// 지우려고 고르는 목록이므로 그룹마다 한 장은 반드시 남깁니다. 남기는
+  /// 기준은 가장 오래된 것 — 원본일 가능성이 높고, 무엇보다 어느 기기에서
+  /// 돌려도 같은 답이 나옵니다.
+  ///
+  /// 지금 보고 있는 조건([query]) 안에서만 찾습니다. 폴더 상세를 보고 있는데
+  /// 그 폴더 밖의 사진이 골라지면 화면에 보이지도 않는 것이 선택됩니다.
+  Future<List<String>> duplicateAssetIds(PhotoQuery query) async {
+    final clause = _clause(query);
+    final scope = clause.where.isEmpty ? '' : ' WHERE ${clause.where}';
+    final rows = await _database.db.rawQuery(
+      'SELECT p.asset_id FROM photos p$scope'
+      "${clause.where.isEmpty ? ' WHERE' : ' AND'}"
+      ' p.photo_key IN ('
+      '   SELECT photo_key FROM photos GROUP BY photo_key HAVING COUNT(*) > 1'
+      ' )'
+      ' AND p.asset_id != ('
+      '   SELECT q.asset_id FROM photos q'
+      '    WHERE q.photo_key = p.photo_key'
+      '    ORDER BY q.created_ms ASC, q.asset_id ASC LIMIT 1'
+      ' )'
+      ' ORDER BY p.created_ms DESC, p.asset_id DESC',
+      clause.args,
+    );
+    return rows.map((r) => r['asset_id'] as String).toList();
+  }
+
+  /// asset id 들이 가리키는 photo_key 집합.
+  ///
+  /// 목록에 아직 읽어오지 않은 사진도 선택될 수 있어서, 화면에 로드된 항목만
+  /// 훑어서는 키를 다 모으지 못합니다. DB 에 직접 물어봅니다.
+  Future<List<String>> photoKeysOf(Iterable<String> assetIds) async {
+    final ids = assetIds.toList();
+    if (ids.isEmpty) return const [];
+    final marks = List.filled(ids.length, '?').join(',');
+    final rows = await _database.db.rawQuery(
+      'SELECT DISTINCT photo_key FROM photos WHERE asset_id IN ($marks)',
+      ids,
+    );
+    return rows.map((r) => r['photo_key'] as String).toList();
+  }
+
   /// 사진 한 장을 asset id 로 찾습니다.
   Future<PhotoItem?> byAssetId(String assetId) async {
     final rows = await _database.db.query(

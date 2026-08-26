@@ -162,6 +162,54 @@ void main() {
     });
   });
 
+  group('중복 사진 고르기', () {
+    test('같은 사진의 복사본만, 그룹마다 한 장씩 남기고 고른다', () async {
+      // k1 이 3장, k2 가 2장, k3 은 1장.
+      await addPhoto('a1', 'k1', createdMs: 1000);
+      await addPhoto('a2', 'k1', createdMs: 1000);
+      await addPhoto('a3', 'k1', createdMs: 1000);
+      await addPhoto('b1', 'k2', createdMs: 2000);
+      await addPhoto('b2', 'k2', createdMs: 2000);
+      await addPhoto('c1', 'k3', createdMs: 3000);
+
+      final dups = await photos.duplicateAssetIds(const PhotoQuery());
+
+      expect(dups.toSet(), {'a2', 'a3', 'b2'});
+      expect(dups, isNot(contains('a1')), reason: '그룹마다 한 장은 남아야 한다');
+      expect(dups, isNot(contains('b1')));
+      expect(dups, isNot(contains('c1')), reason: '복사본이 없는 사진은 대상이 아니다');
+    });
+
+    test('복사본이 없으면 빈 목록', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('b1', 'k2');
+      expect(await photos.duplicateAssetIds(const PhotoQuery()), isEmpty);
+    });
+
+    test('지금 보고 있는 조건 안에서만 찾는다', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('a2', 'k1');
+      await notes.write('k1', '메모');
+      await addPhoto('b1', 'k2');
+      await addPhoto('b2', 'k2');   // 메모 없음 → '메모' 조건 밖
+
+      final inNotes =
+          await photos.duplicateAssetIds(const PhotoQuery(scope: PhotoScope.withNote));
+      expect(inNotes, ['a2']);
+    });
+
+    test('고른 asset 들의 photo_key 를 DB 에서 되찾는다', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('a2', 'k1');
+      await addPhoto('b1', 'k2');
+
+      // 같은 사진의 복사본은 키가 하나로 접힌다.
+      expect((await photos.photoKeysOf(['a1', 'a2', 'b1'])).toSet(),
+          {'k1', 'k2'});
+      expect(await photos.photoKeysOf(const []), isEmpty);
+    });
+  });
+
   group('기기에서 사진 지우기', () {
     test('지운 사진은 목록에서 사라지고 메모·태그는 남는다', () async {
       await addPhoto('a1', 'k1');

@@ -17,6 +17,7 @@ class PhotoThumb extends StatelessWidget {
     this.hasNote = false,
     this.onTap,
     this.onLongPress,
+    this.onNoteTap,
   });
 
   final PhotoItem item;
@@ -25,6 +26,9 @@ class PhotoThumb extends StatelessWidget {
   final bool hasNote;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+
+  /// 메모 배지를 눌렀을 때. null 이면 배지는 그냥 표시로만 남습니다.
+  final VoidCallback? onNoteTap;
 
   @override
   Widget build(BuildContext context) {
@@ -55,10 +59,27 @@ class PhotoThumb extends StatelessWidget {
           ),
 
           if (hasNote)
-            const Positioned(
-              right: 3,
-              bottom: 3,
-              child: _Badge(icon: Icons.sticky_note_2),
+            Positioned(
+              right: 0,
+              bottom: 0,
+              // 누를 수 있을 때만 GestureDetector 를 답니다. 눌러도 할 일이
+              // 없는 상태(선택 중)에서 opaque 로 감싸 두면, 그 자리를 눌렀을 때
+              // 아무 일도 일어나지 않아 사진 선택이 먹히지 않습니다.
+              child: onNoteTap == null
+                  ? const Padding(
+                      padding: EdgeInsets.all(3),
+                      child: _Badge(icon: Icons.sticky_note_2),
+                    )
+                  : GestureDetector(
+                      onTap: onNoteTap,
+                      behavior: HitTestBehavior.opaque,
+                      child: const Padding(
+                        // 배지가 작아 손가락으로 정확히 누르기 어렵습니다.
+                        // 눌리는 범위만 넓히고 보이는 크기는 그대로 둡니다.
+                        padding: EdgeInsets.all(6),
+                        child: _Badge(icon: Icons.sticky_note_2),
+                      ),
+                    ),
             ),
 
           if (selectionMode)
