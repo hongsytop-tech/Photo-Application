@@ -12,8 +12,9 @@ import 'package:photo_application/features/tags/widgets/tag_picker_sheet.dart';
 
 /// 조건이 정해진 사진 목록 화면 한 벌.
 ///
-/// 갤러리 탭, 폴더 상세, 태그 상세가 전부 이 화면을 재사용합니다. 길게 눌러
-/// 선택 모드로 들어가면 여러 장에 태그를 달거나 폴더에 넣을 수 있습니다.
+/// 갤러리 탭, 폴더 상세, 태그 상세가 전부 이 화면을 재사용합니다. 앱바의
+/// 선택 버튼을 누르거나 사진을 길게 누르면 선택 모드로 들어가, 여러 장에
+/// 태그를 달거나 폴더에 넣거나 한 번에 치울 수 있습니다.
 class PhotoBrowserScreen extends ConsumerStatefulWidget {
   const PhotoBrowserScreen({
     super.key,
@@ -53,12 +54,30 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
   /// 누르면 같은 사진을 두 번 지우려 들게 됩니다.
   bool _deleting = false;
 
+  /// 선택 버튼으로 들어왔는지.
+  ///
+  /// 길게 눌러 들어온 선택 모드는 마지막 한 장을 풀면 알아서 빠져나갑니다.
+  /// 버튼으로 들어온 경우까지 그러면, 방금 "선택"을 누른 사람이 고르기를
+  /// 무르는 순간 선택 모드가 통째로 사라져 버립니다.
+  bool _selectionPinned = false;
+
   void _startSelection(PhotoItem item) {
     setState(() {
       _selectionMode = true;
+      _selectionPinned = false;
       _selected
         ..clear()
         ..add(item.assetId);
+    });
+  }
+
+  /// 앱바 버튼으로 선택 모드를 켭니다. 고른 것 없이 시작해서, 사진을 눌러
+  /// 담습니다. 길게 누르기는 그대로 둡니다 — 익숙한 쪽을 뺏지 않습니다.
+  void _beginSelection() {
+    setState(() {
+      _selectionMode = true;
+      _selectionPinned = true;
+      _selected.clear();
     });
   }
 
@@ -67,13 +86,14 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
       if (!_selected.remove(item.assetId)) {
         _selected.add(item.assetId);
       }
-      if (_selected.isEmpty) _selectionMode = false;
+      if (_selected.isEmpty && !_selectionPinned) _selectionMode = false;
     });
   }
 
   void _clearSelection() {
     setState(() {
       _selectionMode = false;
+      _selectionPinned = false;
       _selected.clear();
     });
   }
@@ -90,10 +110,10 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
 
   /// 선택된 asset 들의 photo_key 집합.
   ///
-  /// 화면에 읽어온 항목만 훑지 않고 DB 에 물어봅니다. 중복 사진 고르기처럼
-  /// 아직 스크롤이 닿지 않은 사진까지 선택될 수 있어서, 로드된 것만 보면
-  /// 태그·폴더가 일부에만 붙습니다. 같은 사진의 복사본은 키가 겹치므로
-  /// 조회 쪽에서 DISTINCT 로 접힙니다.
+  /// 화면에 읽어온 항목만 훑지 않고 DB 에 물어봅니다. 선택이 어디서 왔든
+  /// 키를 빠짐없이 모으기 위해서입니다 — 놓치면 태그·폴더가 고른 사진의
+  /// 일부에만 붙습니다. 같은 사진의 복사본은 키가 겹치므로 조회 쪽에서
+  /// DISTINCT 로 접힙니다.
   Future<List<String>> _selectedPhotoKeys() =>
       ref.read(photoQueryServiceProvider).photoKeysOf(_selected);
 
@@ -178,29 +198,6 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// 같은 사진의 복사본을 한 번에 골라 줍니다.
-  ///
-  /// 그룹마다 한 장은 남기고 나머지만 고릅니다. 전부 고르면 지웠을 때 사진이
-  /// 통째로 사라집니다 — 중복을 정리하려던 사람이 원한 결과가 아닙니다.
-  Future<void> _selectDuplicates() async {
-    final ids = await ref
-        .read(photoQueryServiceProvider)
-        .duplicateAssetIds(widget.query);
-    if (!mounted) return;
-
-    if (ids.isEmpty) {
-      _say('중복된 사진이 없습니다.');
-      return;
-    }
-    setState(() {
-      _selectionMode = true;
-      _selected
-        ..clear()
-        ..addAll(ids);
-    });
-    _say('중복 사진 ${ids.length}장을 골랐습니다. 원본 한 장씩은 남겨 두었습니다.');
-  }
-
   void _open(int index) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -230,7 +227,11 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
                   onPressed: _clearSelection,
                   tooltip: '선택 해제',
                 ),
-                title: Text('${_selected.length}장 선택'),
+                title: Text(
+                  _selected.isEmpty ? '사진 선택' : '${_selected.length}장 선택',
+                ),
+                // 아무것도 안 골랐을 때는 눌러도 할 일이 없으므로 잠급니다.
+                // 눌리는데 아무 일도 안 일어나면 고장으로 보입니다.
                 actions: [
                   IconButton(
                     icon: const Icon(Icons.select_all),
@@ -239,17 +240,18 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.sell_outlined),
-                    onPressed: _bulkTag,
+                    onPressed: _selected.isEmpty ? null : _bulkTag,
                     tooltip: '태그 달기',
                   ),
                   IconButton(
                     icon: const Icon(Icons.folder_outlined),
-                    onPressed: _bulkFolder,
+                    onPressed: _selected.isEmpty ? null : _bulkFolder,
                     tooltip: '폴더에 넣기',
                   ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
-                    onPressed: _deleting ? null : _bulkDelete,
+                    onPressed:
+                        _deleting || _selected.isEmpty ? null : _bulkDelete,
                     tooltip: '휴지통으로 보내기',
                   ),
                 ],
@@ -269,9 +271,9 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
                 ),
                 actions: [
                   IconButton(
-                    icon: const Icon(Icons.filter_none),
-                    onPressed: _selectDuplicates,
-                    tooltip: '중복 사진 고르기',
+                    icon: const Icon(Icons.checklist),
+                    onPressed: state.items.isEmpty ? null : _beginSelection,
+                    tooltip: '사진 여러 장 선택',
                   ),
                   ...widget.actions,
                 ],
