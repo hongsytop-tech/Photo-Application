@@ -9,10 +9,8 @@ import 'package:photo_application/features/update/services/update_service.dart';
 
 /// 실제 네트워크·설정 화면 대신 눌린 순서만 기록하는 대역.
 class _FakeUpdateService extends UpdateService {
-  _FakeUpdateService({this.granted = false});
-
-  /// "이 출처의 앱 설치"가 켜져 있는지.
-  bool granted;
+  /// "이 출처의 앱 설치"가 켜져 있는지. 기본은 꺼짐 — 갓 설치한 상태다.
+  bool granted = false;
 
   /// 설정 화면에서 사용자가 켜 줄지.
   bool grantOnRequest = false;
