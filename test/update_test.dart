@@ -25,6 +25,9 @@ class _FakeUpdateService extends UpdateService {
   /// 설치 화면 열기가 실패한 척할지 (보안 설정에 막힌 경우 등).
   String? installFailure;
 
+  /// 정리 요청을 받은 릴리스들. null 은 "전부 치워라".
+  final cleaned = <AppRelease?>[];
+
   @override
   Future<int> currentBuildNumber() async => 10;
 
@@ -48,6 +51,9 @@ class _FakeUpdateService extends UpdateService {
 
   @override
   Future<File?> cachedApk(AppRelease release) async => cached;
+
+  @override
+  Future<void> cleanStaleApks({AppRelease? keep}) async => cleaned.add(keep);
 
   @override
   Future<File> download(
@@ -261,6 +267,17 @@ void main() {
       expect(state.phase, UpdatePhase.needsPermission);
       expect(state.apk, isNotNull, reason: '받아 둔 파일까지 버리면 처음부터다');
       expect(service.downloads, 1);
+    });
+
+    test('확인할 때 지난 릴리스의 APK 를 치운다', () async {
+      // 받아 둔 파일을 다시 쓰기로 한 이상, 쓸모없어진 20MB 는 우리가
+      // 치워야 한다. 아무도 안 치우면 릴리스마다 쌓인다.
+      final controller = container.read(updateProvider.notifier);
+      await controller.check();
+
+      expect(service.cleaned, hasLength(1));
+      expect(service.cleaned.single?.tag, 'apk-build-11',
+          reason: '이번에 받을 것만 남기고 나머지를 치운다');
     });
 
     test('허용하고 돌아오면 내려받기를 건너뛰고 설치 단계로 간다', () async {

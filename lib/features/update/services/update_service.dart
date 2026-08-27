@@ -141,6 +141,32 @@ class UpdateService {
     }
   }
 
+  /// 이제 쓰지 않는 APK 를 치웁니다. [keep] 만 남깁니다 (null 이면 전부).
+  ///
+  /// 받아 둔 파일을 다시 쓰기로 한 이상, 쓸모가 없어진 파일은 우리가 치워야
+  /// 합니다. 릴리스 하나가 20MB 라 몇 번만 지나면 눈에 띄게 쌓입니다.
+  ///
+  /// 임시 폴더는 시스템이 언제든 비울 수 있는 곳이라 실패해도 문제 삼지
+  /// 않습니다. 다음에 지우면 됩니다.
+  Future<void> cleanStaleApks({AppRelease? keep}) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final keepPath = keep == null ? null : (await apkFile(keep)).path;
+      for (final entity in dir.listSync()) {
+        if (entity is! File) continue;
+
+        // 우리가 만든 파일만 건드립니다. 임시 폴더는 다른 플러그인도 씁니다.
+        final name = entity.uri.pathSegments.last;
+        if (!name.startsWith('photo-') || !name.endsWith('.apk')) continue;
+        if (entity.path == keepPath) continue;
+
+        entity.deleteSync();
+      }
+    } catch (error) {
+      debugPrint('오래된 APK 정리 실패: $error');
+    }
+  }
+
   /// APK 를 내려받아 저장한 경로를 돌려줍니다.
   ///
   /// [onProgress] 는 0.0~1.0. 서버가 길이를 안 알려주면 호출되지 않습니다.

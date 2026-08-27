@@ -139,9 +139,16 @@ class UpdateController extends StateNotifier<UpdateState> {
       }
 
       if (latest.buildNumber <= current) {
+        // 최신이라면 받아 둔 APK 는 이미 설치됐거나 쓸모가 없습니다.
+        await service.cleanStaleApks();
+        if (!mounted) return;
         state = UpdateState(phase: UpdatePhase.upToDate, currentBuild: current);
         return;
       }
+
+      // 지난 릴리스의 APK 는 치우고 이번 것만 남깁니다.
+      await service.cleanStaleApks(keep: latest);
+      if (!mounted) return;
       state = UpdateState(
         phase: UpdatePhase.available,
         currentBuild: current,
