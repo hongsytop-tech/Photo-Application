@@ -190,6 +190,17 @@ class SettingsScreen extends ConsumerWidget {
                 label: Text('다운로드 (${update.release?.sizeLabel ?? ''})'),
               ),
             ),
+          // 설치가 막혀 되돌아왔을 때 다시 누를 자리. 여기가 없으면 앱을
+          // 껐다 켜서 처음부터 다시 하는 수밖에 없습니다.
+          if (update.phase == UpdatePhase.readyToInstall)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: FilledButton.icon(
+                onPressed: () => ref.read(updateProvider.notifier).install(),
+                icon: const Icon(Icons.install_mobile),
+                label: Text(update.installTried ? '다시 설치' : '설치'),
+              ),
+            ),
 
           const _SectionHeader('위험 구역'),
           ListTile(
@@ -245,6 +256,8 @@ class SettingsScreen extends ConsumerWidget {
         return '설치를 허용해야 합니다 — 아래 버튼으로 설정을 여세요.';
       case UpdatePhase.ready:
         return '설치 허용됨. 이제 내려받을 수 있습니다.';
+      case UpdatePhase.readyToInstall:
+        return '내려받았습니다. 설치만 남았습니다.';
       case UpdatePhase.downloading:
         return '받는 중 ${(state.progress * 100).toStringAsFixed(0)}%';
       case UpdatePhase.installing:

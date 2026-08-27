@@ -113,6 +113,34 @@ class UpdateService {
     }
   }
 
+  /// 이 릴리스의 APK 를 저장할 자리.
+  Future<File> apkFile(AppRelease release) async {
+    final dir = await getTemporaryDirectory();
+    return File('${dir.path}/photo-${release.tag}.apk');
+  }
+
+  /// 이미 온전히 받아 둔 APK. 없으면 null.
+  ///
+  /// 설치가 막혀 되돌아온 사람에게 20MB 를 다시 받게 할 이유가 없습니다.
+  /// 앱을 껐다 켜도 파일은 남아 있으므로 그때도 이 파일을 씁니다.
+  ///
+  /// 크기가 다르면 없는 셈 칩니다. 받다 만 APK 를 설치하려 들면 "패키지를
+  /// 파싱할 수 없습니다"로만 나와, 진짜 원인(끊긴 다운로드)을 알 길이
+  /// 없습니다.
+  Future<File?> cachedApk(AppRelease release) async {
+    try {
+      final file = await apkFile(release);
+      if (!file.existsSync()) return null;
+      if (release.sizeBytes > 0 && file.lengthSync() != release.sizeBytes) {
+        return null;
+      }
+      return file;
+    } catch (error) {
+      debugPrint('받아 둔 APK 확인 실패: $error');
+      return null;
+    }
+  }
+
   /// APK 를 내려받아 저장한 경로를 돌려줍니다.
   ///
   /// [onProgress] 는 0.0~1.0. 서버가 길이를 안 알려주면 호출되지 않습니다.
@@ -120,8 +148,7 @@ class UpdateService {
     AppRelease release, {
     void Function(double progress)? onProgress,
   }) async {
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/photo-${release.tag}.apk');
+    final file = await apkFile(release);
 
     // 받다 만 파일이 남아 있으면 지웁니다. 이어받기는 하지 않습니다 —
     // 반쯤 받은 APK 를 설치하려 들면 실패 이유를 알기 어렵습니다.

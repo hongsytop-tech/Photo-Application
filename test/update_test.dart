@@ -19,6 +19,12 @@ class _FakeUpdateService extends UpdateService {
   int downloads = 0;
   int installs = 0;
 
+  /// 이미 받아 둔 APK 가 있는 척할지.
+  File? cached;
+
+  /// 설치 화면 열기가 실패한 척할지 (보안 설정에 막힌 경우 등).
+  String? installFailure;
+
   @override
   Future<int> currentBuildNumber() async => 10;
 
@@ -41,23 +47,31 @@ class _FakeUpdateService extends UpdateService {
   }
 
   @override
+  Future<File?> cachedApk(AppRelease release) async => cached;
+
+  @override
   Future<File> download(
     AppRelease release, {
     void Function(double progress)? onProgress,
   }) async {
     downloads++;
     onProgress?.call(1);
-    return File('${Directory.systemTemp.path}/fake-${release.tag}.apk');
+    final file = File('${Directory.systemTemp.path}/fake-${release.tag}.apk');
+    cached = file;
+    return file;
   }
 
   @override
   Future<String?> install(File apk) async {
     installs++;
-    return null;
+    return installFailure;
   }
 }
 
 void main() {
+  // UpdateController 가 AppLifecycleListener 를 만들므로 바인딩이 필요합니다.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('stripAbiOffset', () {
     // --split-per-abi 는 versionCode 에 ABI 오프셋을 더한다.
     // 이걸 걷어내지 않으면 릴리스 번호와 견줄 때 언제나 설치된 쪽이 커 보여
@@ -148,6 +162,8 @@ void main() {
       expect(service.downloads, 1);
       expect(service.installs, 1);
       expect(container.read(updateProvider).phase, UpdatePhase.installing);
+      expect(container.read(updateProvider).apk, isNotNull,
+          reason: '받아 둔 파일을 들고 있어야 다시 설치할 수 있다');
     });
 
     test('허용해 놓고 껐으면 다운로드를 눌러도 다시 설정으로 보낸다', () async {
@@ -170,9 +186,94 @@ void main() {
 
       // 우리가 연 화면이 아니라 설정 앱 깊숙한 곳에서 자동 차단을 끈 경우.
       service.granted = true;
-      await controller.recheckPermission();
+      await controller.onResumed();
 
       expect(container.read(updateProvider).phase, UpdatePhase.ready);
+    });
+  });
+
+  // 실제로 겪은 고장: 설치 화면이 보안 설정에 막혀 되돌아오면 화면이
+  // "설치 화면을 여는 중…"에 멈춘 채 남았다. 다시 누를 버튼이 없어 앱을
+  // 껐다 켜고 내려받기부터 다시 해야 했다.
+  group('설치가 막혀 돌아왔을 때', () {
+    late _FakeUpdateService service;
+    late ProviderContainer container;
+
+    Future<UpdateController> downloaded() async {
+      final controller = container.read(updateProvider.notifier);
+      await controller.check();
+      service.granted = true;
+      await controller.start();
+      await controller.downloadAndInstall();
+      return controller;
+    }
+
+    setUp(() {
+      service = _FakeUpdateService();
+      container = ProviderContainer(
+        overrides: [updateServiceProvider.overrideWithValue(service)],
+      );
+    });
+    tearDown(() => container.dispose());
+
+    test('앱으로 돌아오면 멈추지 않고 다시 설치할 수 있는 상태가 된다', () async {
+      final controller = await downloaded();
+      expect(container.read(updateProvider).phase, UpdatePhase.installing);
+
+      // 설치가 됐다면 앱은 새 버전으로 갈아치워져 다시 시작한다. 여기로
+      // 돌아왔다는 건 설치되지 않았다는 뜻이다.
+      await controller.onResumed();
+
+      final state = container.read(updateProvider);
+      expect(state.phase, UpdatePhase.readyToInstall);
+      expect(state.installTried, isTrue);
+      expect(state.apk, isNotNull);
+    });
+
+    test('다시 설치는 내려받지 않고 있던 파일을 쓴다', () async {
+      final controller = await downloaded();
+      await controller.onResumed();
+
+      await controller.install();
+
+      expect(service.downloads, 1, reason: '같은 파일을 다시 받으면 안 된다');
+      expect(service.installs, 2);
+    });
+
+    test('설치 화면 열기가 실패해도 오류로 끝내지 않는다', () async {
+      service.installFailure = '열 수 없습니다';
+      await downloaded();
+
+      final state = container.read(updateProvider);
+      expect(state.phase, UpdatePhase.readyToInstall,
+          reason: '오류 화면은 다시 누를 수단이 없어 막다른 길이 된다');
+      expect(state.installTried, isTrue);
+    });
+
+    test('그 사이 허용이 꺼졌으면 설정으로 보내되 받아 둔 파일은 지킨다', () async {
+      final controller = await downloaded();
+      await controller.onResumed();
+
+      service.granted = false;
+      await controller.install();
+
+      final state = container.read(updateProvider);
+      expect(state.phase, UpdatePhase.needsPermission);
+      expect(state.apk, isNotNull, reason: '받아 둔 파일까지 버리면 처음부터다');
+      expect(service.downloads, 1);
+    });
+
+    test('허용하고 돌아오면 내려받기를 건너뛰고 설치 단계로 간다', () async {
+      // 앱을 껐다 켠 뒤: 파일은 디스크에 그대로 남아 있다.
+      service.cached = File('${Directory.systemTemp.path}/fake.apk');
+      service.granted = true;
+
+      final controller = container.read(updateProvider.notifier);
+      await controller.check();
+      await controller.start();
+
+      expect(container.read(updateProvider).phase, UpdatePhase.readyToInstall);
+      expect(service.downloads, 0, reason: '이미 있는 20MB 를 다시 받을 이유가 없다');
     });
   });
 }
