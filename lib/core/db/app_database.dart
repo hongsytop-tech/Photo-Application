@@ -20,7 +20,7 @@ class AppDatabase {
   static AppDatabase? _instance;
 
   static const _fileName = 'photo_application.db';
-  static const _version = 2;
+  static const _version = 3;
 
   static Future<AppDatabase> getInstance() async {
     if (_instance != null) return _instance!;
@@ -59,13 +59,39 @@ class AppDatabase {
   }
 
   static Future<void> _onUpgrade(Database db, int from, int to) async {
-    // 아직 실제 마이그레이션은 없습니다. 스키마를 바꿀 때 여기에 from < N
-    // 분기를 추가하세요.
-    //
     // 버전 2 는 비어 있지만 되돌리지 않습니다. 빌드 #16 이 태그 분류용
     // 테이블을 만들며 이 번호를 이미 썼고, 그 빌드를 깔았던 기기는 로컬 DB
     // 가 2 로 올라가 있습니다. 여기서 1 로 낮추면 sqflite 가 다운그레이드로
     // 보고 앱이 열리지 않습니다. 쓰이지 않는 테이블 하나가 남는 편이 낫습니다.
+
+    // 3: 폴더 트리 — folders.parent_id. 빈 문자열이 뿌리입니다.
+    //
+    // NULL 대신 '' 를 쓰는 이유: 동기화가 NULL 컬럼을 빼고 넣어 테이블
+    // 기본값에 맡기는데, 뿌리를 NULL 로 두면 "값이 없음"과 "뿌리"를
+    // 구분할 수 없습니다.
+    if (from < 3) {
+      if (!await _hasColumn(db, 'folders', 'parent_id')) {
+        await db.execute(
+          "ALTER TABLE folders ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''",
+        );
+      }
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS folders_parent_idx ON folders (parent_id)',
+      );
+    }
+  }
+
+  /// 컬럼이 이미 있는지. 마이그레이션을 여러 번 돌려도 안전하게 만듭니다.
+  ///
+  /// ALTER TABLE 은 같은 컬럼을 두 번 더하면 실패하고, 그러면 앱이 아예
+  /// 열리지 않습니다. 실패해도 괜찮은 종류의 사고가 아닙니다.
+  static Future<bool> _hasColumn(
+    Database db,
+    String table,
+    String column,
+  ) async {
+    final rows = await db.rawQuery('PRAGMA table_info($table)');
+    return rows.any((r) => r['name'] == column);
   }
 
   static const List<String> _schemaV1 = [
@@ -122,11 +148,13 @@ class AppDatabase {
     CREATE TABLE folders (
       id         TEXT PRIMARY KEY,
       name       TEXT NOT NULL,
+      parent_id  TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       updated_ms INTEGER NOT NULL DEFAULT 0,
       deleted    INTEGER NOT NULL DEFAULT 0
     )
     ''',
+    'CREATE INDEX folders_parent_idx ON folders (parent_id)',
 
     // --- 사진 ↔ 가상 폴더 (다대다) ----------------------------------------
     // 한 사진이 여러 폴더에 들어갈 수 있게 했습니다. 한 곳에만 넣고 싶으면

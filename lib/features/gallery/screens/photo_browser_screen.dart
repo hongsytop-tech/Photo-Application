@@ -8,6 +8,7 @@ import 'package:photo_application/features/gallery/providers/gallery_providers.d
 import 'package:photo_application/features/gallery/screens/photo_viewer_screen.dart';
 import 'package:photo_application/features/gallery/services/photo_query_service.dart';
 import 'package:photo_application/features/gallery/widgets/photo_grid.dart';
+import 'package:photo_application/features/gallery/widgets/trash_photos.dart';
 import 'package:photo_application/features/tags/widgets/tag_picker_sheet.dart';
 
 /// 조건이 정해진 사진 목록 화면 한 벌.
@@ -125,65 +126,43 @@ class _PhotoBrowserScreenState extends ConsumerState<PhotoBrowserScreen> {
     if (saved ?? false) _clearSelection();
   }
 
+  /// 폴더 고르기 시트를 엽니다.
+  ///
+  /// 폴더 상세에서 열면 그 폴더를 **출처**로 넘겨, 시트가 복사와 이동을
+  /// 가를 수 있게 합니다. 사진 탭이나 태그 상세에서는 출처가 없으니
+  /// 복사만 할 수 있습니다 — 어디서 빼야 하는지 정할 수 없기 때문입니다.
   Future<void> _bulkFolder() async {
     final keys = await _selectedPhotoKeys();
     if (!mounted) return;
     if (keys.isEmpty) return;
-    final saved = await FolderPickerSheet.show(context, keys);
-    if (saved ?? false) _clearSelection();
+
+    final inFolder = widget.query.scope == PhotoScope.folder;
+    final outcome = await FolderPickerSheet.show(
+      context,
+      keys,
+      sourceFolderId: inFolder ? widget.query.folderId : null,
+      sourceFolderName: inFolder ? widget.title : null,
+    );
+    if (!mounted || outcome == null) return;
+    _clearSelection();
+    _say(outcome.message);
   }
 
   /// 고른 사진을 기기에서 치웁니다 — 되도록 **휴지통으로** 보냅니다.
   ///
-  /// 이 앱의 다른 모든 동작은 사진 파일을 읽기만 하는데 이것만 예외라서,
-  /// 확인 창에서 무엇이 일어나는지 분명히 말합니다. 그 뒤에 안드로이드가
-  /// 시스템 확인 창을 한 번 더 띄웁니다.
+  /// 확인 창과 실제 삭제는 뷰어와 공유합니다 (`trash_photos.dart`). 지우는
+  /// 경로가 둘로 갈라지면 한쪽만 고치는 일이 생기는데, 사진을 지우는
+  /// 코드에서 그런 어긋남은 되돌릴 수 없습니다.
   Future<void> _bulkDelete() async {
     final ids = _selected.toList();
     if (ids.isEmpty) return;
 
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('사진 ${ids.length}장을 휴지통으로 보낼까요?'),
-        content: const Text(
-          '기기의 휴지통으로 들어가며, 30일 안에는 갤러리에서 되살릴 수 '
-          '있습니다. 휴지통이 없는 기기(안드로이드 10 이하)에서는 바로 '
-          '지워집니다.\n\n'
-          '메모와 태그는 지우지 않습니다. 같은 사진이 다른 기기에 남아 있을 수 '
-          '있어서, 거기서는 그대로 보입니다.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('취소'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('휴지통으로'),
-          ),
-        ],
-      ),
-    );
-    if (!(ok ?? false) || !mounted) return;
-
     setState(() => _deleting = true);
     try {
-      // 시스템 확인 창에서 거절당하면 빈 목록이 옵니다. 요청한 수가 아니라
-      // 실제로 치워진 것만 인덱스에서 뺍니다.
-      final removed = await ref.read(galleryServiceProvider).removeAssets(ids);
-      await ref.read(photoIndexServiceProvider).forget(removed.ids);
-      if (!mounted) return;
-
-      ref.bumpDataRevision();
+      final removed = await confirmAndTrash(context, ref, ids);
+      if (!mounted || removed == null) return;
       _clearSelection();
-      if (removed.isEmpty) {
-        _say('아무것도 치우지 않았습니다.');
-      } else if (removed.trashed) {
-        _say('${removed.ids.length}장을 휴지통으로 보냈습니다.');
-      } else {
-        _say('${removed.ids.length}장을 기기에서 지웠습니다.');
-      }
+      _say(trashMessage(removed));
     } catch (error, stack) {
       debugPrint('사진 삭제 실패: $error\n$stack');
       if (mounted) _say('치우지 못했습니다: $error');

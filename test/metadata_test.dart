@@ -270,6 +270,181 @@ void main() {
     });
   });
 
+  group('폴더 트리', () {
+    test('폴더 안에 폴더를 만들고, 하위 폴더 수가 잡힌다', () async {
+      final trip = await folders.create('여행');
+      final y23 = await folders.create('2023', parentId: trip.id);
+      await folders.create('제주', parentId: y23.id);
+
+      final all = await folders.listAll();
+      final byName = {for (final f in all) f.name: f};
+      expect(byName['여행']!.parentId, '');
+      expect(byName['2023']!.parentId, trip.id);
+      expect(byName['제주']!.parentId, y23.id);
+      expect(byName['여행']!.subfolderCount, 1);
+      expect(byName['2023']!.subfolderCount, 1);
+      expect(byName['제주']!.subfolderCount, 0);
+    });
+
+    test('하위 폴더 조회는 자기 자신과 모든 자손을 준다', () async {
+      final trip = await folders.create('여행');
+      final y23 = await folders.create('2023', parentId: trip.id);
+      final jeju = await folders.create('제주', parentId: y23.id);
+      final food = await folders.create('음식');
+
+      expect(await folders.subtreeIds(trip.id), {trip.id, y23.id, jeju.id});
+      expect(await folders.subtreeIds(food.id), {food.id});
+    });
+
+    test('폴더를 지우면 하위 폴더도 함께, 사진은 미지정으로', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('a2', 'k2');
+      final trip = await folders.create('여행');
+      final y23 = await folders.create('2023', parentId: trip.id);
+      await folders.add(trip.id, 'k1');
+      await folders.add(y23.id, 'k2');
+      expect(await folders.countUnassigned(), 0);
+
+      await folders.delete(trip.id);
+
+      // 하위 폴더를 남기면 부모를 잃은 채 뿌리로 올라와, 지웠다고 생각한
+      // 것이 다시 나타난다.
+      expect(await folders.listAll(), isEmpty);
+      expect(await idsOf(const PhotoQuery()), ['a1', 'a2']);
+      expect(await folders.countUnassigned(), 2);
+    });
+
+    test('자기 하위 폴더 안으로는 옮길 수 없다', () async {
+      final trip = await folders.create('여행');
+      final y23 = await folders.create('2023', parentId: trip.id);
+      final jeju = await folders.create('제주', parentId: y23.id);
+
+      // 막지 않으면 그 가지가 트리에서 떨어져 나가 화면에 영원히 안 나온다.
+      expect(await folders.moveFolder(trip.id, jeju.id), MoveFolderResult.cycle);
+      expect(await folders.moveFolder(trip.id, trip.id), MoveFolderResult.cycle);
+
+      final all = {for (final f in await folders.listAll()) f.id: f};
+      expect(all[trip.id]!.parentId, '', reason: '막혔으면 그대로여야 한다');
+    });
+
+    test('다른 폴더 아래로 옮기고 뿌리로 올릴 수 있다', () async {
+      final trip = await folders.create('여행');
+      final food = await folders.create('음식');
+
+      expect(await folders.moveFolder(food.id, trip.id), MoveFolderResult.moved);
+      var all = {for (final f in await folders.listAll()) f.id: f};
+      expect(all[food.id]!.parentId, trip.id);
+      expect(all[trip.id]!.subfolderCount, 1);
+
+      expect(await folders.moveFolder(food.id, ''), MoveFolderResult.moved);
+      all = {for (final f in await folders.listAll()) f.id: f};
+      expect(all[food.id]!.parentId, '');
+      expect(all[trip.id]!.subfolderCount, 0);
+    });
+
+    test('정렬 순서는 형제들 사이에서만 센다', () async {
+      final trip = await folders.create('여행');
+      final a = await folders.create('가', parentId: trip.id);
+      final b = await folders.create('나', parentId: trip.id);
+      final food = await folders.create('음식');
+
+      // 전체에서 세면 하위 폴더를 만들 때마다 엉뚱하게 큰 값이 붙는다.
+      expect(a.sortOrder, 0);
+      expect(b.sortOrder, 1);
+      expect(food.sortOrder, 1, reason: '뿌리끼리는 여행 다음이 1');
+    });
+
+    test('위로·아래로 한 칸씩 형제 안에서 움직인다', () async {
+      final first = await folders.create('첫째');
+      final second = await folders.create('둘째');
+      final third = await folders.create('셋째');
+
+      Future<List<String>> order() async =>
+          (await folders.listAll()).map((f) => f.name).toList();
+
+      expect(await order(), ['첫째', '둘째', '셋째']);
+      await folders.nudge(third.id, up: true);
+      expect(await order(), ['첫째', '셋째', '둘째']);
+      await folders.nudge(first.id, up: false);
+      expect(await order(), ['셋째', '첫째', '둘째']);
+
+      // 끝에서 더 밀어도 아무 일이 없어야 한다 (튕겨 나가지 않는다).
+      await folders.nudge(second.id, up: false);
+      expect(await order(), ['셋째', '첫째', '둘째']);
+    });
+  });
+
+  group('다른 폴더로 이동과 복사', () {
+    test('복사는 지금 속한 폴더를 그대로 둔다', () async {
+      await addPhoto('a1', 'k1');
+      final a = await folders.create('A');
+      final b = await folders.create('B');
+      final c = await folders.create('C');
+      await folders.setFoldersOf('k1', {a.id, c.id});
+
+      await folders.copyPhotos([b.id], ['k1']);
+
+      expect(await folders.folderIdsOf('k1'), {a.id, b.id, c.id});
+    });
+
+    test('이동은 출처에서만 빼고 다른 폴더는 건드리지 않는다', () async {
+      await addPhoto('a1', 'k1');
+      final a = await folders.create('A');
+      final b = await folders.create('B');
+      final c = await folders.create('C');
+      await folders.setFoldersOf('k1', {a.id, c.id});
+
+      await folders.movePhotos(
+        from: a.id,
+        targetFolderIds: [b.id],
+        photoKeys: ['k1'],
+      );
+
+      // 이동을 "소속 전체 교체"로 해석하면 C 에서도 조용히 빠진다. 사용자가
+      // 보고 있지도 않은 폴더에서 사진이 사라지는 것은 되돌리기 어렵다.
+      expect(await folders.folderIdsOf('k1'), {b.id, c.id});
+    });
+
+    test('넣을 곳에 출처가 들어 있으면 빼지 않는다', () async {
+      await addPhoto('a1', 'k1');
+      final a = await folders.create('A');
+      final b = await folders.create('B');
+      await folders.setFoldersOf('k1', {a.id});
+
+      await folders.movePhotos(
+        from: a.id,
+        targetFolderIds: [a.id, b.id],
+        photoKeys: ['k1'],
+      );
+
+      expect(await folders.folderIdsOf('k1'), {a.id, b.id});
+    });
+
+    test('여러 장을 한 번에 옮긴다', () async {
+      await addPhoto('a1', 'k1');
+      await addPhoto('a2', 'k2');
+      final from = await folders.create('출처');
+      final to = await folders.create('도착');
+      await folders.addMany(from.id, ['k1', 'k2']);
+
+      await folders.movePhotos(
+        from: from.id,
+        targetFolderIds: [to.id],
+        photoKeys: ['k1', 'k2'],
+      );
+
+      expect(
+        await idsOf(PhotoQuery(scope: PhotoScope.folder, folderId: from.id)),
+        isEmpty,
+      );
+      expect(
+        (await idsOf(PhotoQuery(scope: PhotoScope.folder, folderId: to.id)))
+            .toSet(),
+        {'a1', 'a2'},
+      );
+    });
+  });
+
   group('검색', () {
     test('파일명과 메모 양쪽을 본다', () async {
       await addPhoto('a1', 'k1', fileName: '바다.jpg', createdMs: 2000);

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 
 import 'package:photo_application/core/theme/app_theme.dart';
 import 'package:photo_application/features/folders/widgets/folder_picker_sheet.dart';
@@ -9,13 +8,17 @@ import 'package:photo_application/features/gallery/models/photo_item.dart';
 import 'package:photo_application/features/gallery/providers/gallery_providers.dart';
 import 'package:photo_application/features/gallery/providers/photo_meta_providers.dart';
 import 'package:photo_application/features/gallery/services/photo_query_service.dart';
+import 'package:photo_application/features/gallery/widgets/trash_photos.dart';
+import 'package:photo_application/features/gallery/widgets/zoomable_photo.dart';
 import 'package:photo_application/features/notes/screens/note_edit_screen.dart';
 import 'package:photo_application/features/tags/widgets/tag_picker_sheet.dart';
 
 /// 사진 한 장을 크게 보고, 메모·태그·폴더를 붙이는 화면.
 ///
 /// 목록과 같은 조건([query])을 그대로 들고 있어서 좌우로 넘기면 그 조건의
-/// 다음/이전 사진으로 이동합니다.
+/// 다음/이전 사진으로 이동합니다. 두 손가락으로 벌리거나 두 번 눌러 확대할
+/// 수 있고, 확대한 동안에는 페이지 넘김이 꺼집니다 (안 그러면 확대한 자리를
+/// 끌어 볼 수 없습니다).
 class PhotoViewerScreen extends ConsumerStatefulWidget {
   const PhotoViewerScreen({
     super.key,
@@ -35,10 +38,66 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
       PageController(initialPage: widget.initialIndex);
   late int _index = widget.initialIndex;
 
+  /// 지금 보고 있는 사진이 확대되어 있는지. 확대 중에는 페이지를 넘기지
+  /// 않습니다 — 넘김이 켜져 있으면 확대한 사진을 끌어 옮길 수 없습니다.
+  bool _zoomed = false;
+
+  /// 삭제가 도는 동안 버튼을 잠급니다. 시스템 확인 창이 떠 있는 사이 한 번
+  /// 더 누르면 같은 사진을 두 번 지우려 들게 됩니다.
+  bool _deleting = false;
+
   @override
   void dispose() {
     _pageController.dispose();
     super.dispose();
+  }
+
+  /// 보고 있는 사진을 휴지통으로 보냅니다.
+  ///
+  /// [index] 는 목록 안의 위치, [loaded] 는 지금 읽어 둔 사진 수입니다.
+  /// 지운 뒤 목록이 줄어들기 때문에 둘 다 필요합니다.
+  /// * 한 장뿐이었으면 화면을 닫습니다. 빈 화면에 남겨 두면 방금 지운
+  ///   것이 아직 있는 것처럼 보입니다.
+  /// * 맨 끝 사진을 지웠으면 한 칸 앞으로 물러납니다. 그대로 두면
+  ///   `PageView` 가 없는 페이지를 가리켜 빈 화면이 됩니다.
+  /// * 가운데 사진을 지웠으면 그 자리에 다음 사진이 들어오므로 그대로
+  ///   둡니다.
+  Future<void> _delete(
+    PhotoItem item, {
+    required int index,
+    required int loaded,
+  }) async {
+    setState(() => _deleting = true);
+    try {
+      final removed = await confirmAndTrash(context, ref, [item.assetId]);
+      if (!mounted || removed == null) return;
+
+      final message = trashMessage(removed);
+      if (removed.isEmpty) {
+        _say(message);
+        return;
+      }
+      if (loaded <= 1) {
+        Navigator.of(context).pop();
+        return;
+      }
+      if (index >= loaded - 1 && index > 0) {
+        setState(() => _index = index - 1);
+        _pageController.jumpToPage(_index);
+      }
+      _say(message);
+    } catch (error, stack) {
+      debugPrint('사진 삭제 실패: $error\n$stack');
+      if (mounted) _say('치우지 못했습니다: $error');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
+
+  void _say(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -66,6 +125,15 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
           '${index + 1} / ${state.total}',
           style: const TextStyle(fontSize: 15),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _deleting
+                ? null
+                : () => _delete(current, index: index, loaded: items.length),
+            tooltip: '휴지통으로 보내기',
+          ),
+        ],
       ),
       extendBodyBehindAppBar: true,
       body: Column(
@@ -74,6 +142,11 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
             child: PageView.builder(
               controller: _pageController,
               itemCount: items.length,
+              // 확대 중에는 넘김을 끕니다. 켜 두면 확대한 사진을 끌어
+              // 옮기려는 손짓을 PageView 가 가로채 옆 사진으로 넘어갑니다.
+              physics: _zoomed
+                  ? const NeverScrollableScrollPhysics()
+                  : const PageScrollPhysics(),
               onPageChanged: (next) {
                 setState(() => _index = next);
                 // 끝에 가까워지면 다음 페이지를 미리 읽어 둡니다.
@@ -83,24 +156,12 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
                       .loadMore();
                 }
               },
-              itemBuilder: (context, i) => InteractiveViewer(
-                maxScale: 5,
-                child: Center(
-                  child: Image(
-                    image: AssetEntityImageProvider(
-                      items[i].toEntity(),
-                      isOriginal: true,
-                    ),
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stack) => const Center(
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        color: Colors.white38,
-                        size: 48,
-                      ),
-                    ),
-                  ),
-                ),
+              itemBuilder: (context, i) => ZoomablePhoto(
+                key: ValueKey(items[i].assetId),
+                item: items[i],
+                onZoomChanged: (zoomed) {
+                  if (zoomed != _zoomed) setState(() => _zoomed = zoomed);
+                },
               ),
             ),
           ),

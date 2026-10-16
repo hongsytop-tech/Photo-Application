@@ -94,7 +94,7 @@ class SyncService {
       local: 'folders',
       remote: 'photo_folders',
       keys: ['id'],
-      data: ['name', 'sort_order'],
+      data: ['name', 'parent_id', 'sort_order'],
     ),
     _TableSpec(
       local: 'folder_items',
