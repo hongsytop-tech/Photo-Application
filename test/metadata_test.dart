@@ -310,7 +310,9 @@ void main() {
       // 하위 폴더를 남기면 부모를 잃은 채 뿌리로 올라와, 지웠다고 생각한
       // 것이 다시 나타난다.
       expect(await folders.listAll(), isEmpty);
-      expect(await idsOf(const PhotoQuery()), ['a1', 'a2']);
+      // 집합으로 본다. 두 사진의 촬영 시각이 같아 목록 순서는 정해지지
+      // 않는데, 이 테스트가 보려는 것은 순서가 아니라 "남았는가"다.
+      expect((await idsOf(const PhotoQuery())).toSet(), {'a1', 'a2'});
       expect(await folders.countUnassigned(), 2);
     });
 
