@@ -42,6 +42,17 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
   /// 않습니다 — 넘김이 켜져 있으면 확대한 사진을 끌어 옮길 수 없습니다.
   bool _zoomed = false;
 
+  /// 화면에 닿아 있는 손가락들.
+  ///
+  /// 두 개가 되는 **순간** 페이지 넘김을 끕니다. 배율이 올라간 뒤에 끄면
+  /// 늦습니다 — 벌리는 동작의 첫 순간이 페이저와 경주가 되고, 페이저가
+  /// 이기면 확대가 아니라 옆 사진으로 넘어갑니다. 그러면 사용자에게는
+  /// "두 손가락으로는 확대가 안 된다"로 보입니다.
+  final _pointers = <int>{};
+
+  /// 페이지 넘김을 막아야 하는 상태인지.
+  bool get _pageLocked => _zoomed || _pointers.length >= 2;
+
   /// 삭제가 도는 동안 버튼을 잠급니다. 시스템 확인 창이 떠 있는 사이 한 번
   /// 더 누르면 같은 사진을 두 번 지우려 들게 됩니다.
   bool _deleting = false;
@@ -100,6 +111,13 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// 손가락 집합을 고치고, 잠금 상태가 달라졌을 때만 다시 그립니다.
+  void _updatePointers(void Function() change) {
+    final before = _pageLocked;
+    change();
+    if (_pageLocked != before) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(photoListProvider(widget.query));
@@ -139,29 +157,40 @@ class _PhotoViewerScreenState extends ConsumerState<PhotoViewerScreen> {
       body: Column(
         children: [
           Expanded(
-            child: PageView.builder(
-              controller: _pageController,
-              itemCount: items.length,
-              // 확대 중에는 넘김을 끕니다. 켜 두면 확대한 사진을 끌어
-              // 옮기려는 손짓을 PageView 가 가로채 옆 사진으로 넘어갑니다.
-              physics: _zoomed
-                  ? const NeverScrollableScrollPhysics()
-                  : const PageScrollPhysics(),
-              onPageChanged: (next) {
-                setState(() => _index = next);
-                // 끝에 가까워지면 다음 페이지를 미리 읽어 둡니다.
-                if (next >= items.length - 5) {
-                  ref
-                      .read(photoListProvider(widget.query).notifier)
-                      .loadMore();
-                }
-              },
-              itemBuilder: (context, i) => ZoomablePhoto(
-                key: ValueKey(items[i].assetId),
-                item: items[i],
-                onZoomChanged: (zoomed) {
-                  if (zoomed != _zoomed) setState(() => _zoomed = zoomed);
+            // Listener 는 손짓 승부에 끼지 않고 지켜보기만 하므로, 한 손가락
+            // 넘김을 그대로 두고 두 손가락일 때만 반응할 수 있습니다.
+            child: Listener(
+              onPointerDown: (e) =>
+                  _updatePointers(() => _pointers.add(e.pointer)),
+              onPointerUp: (e) =>
+                  _updatePointers(() => _pointers.remove(e.pointer)),
+              onPointerCancel: (e) =>
+                  _updatePointers(() => _pointers.remove(e.pointer)),
+              child: PageView.builder(
+                controller: _pageController,
+                itemCount: items.length,
+                // 확대 중이거나 손가락이 둘이면 넘김을 끕니다. 켜 두면
+                // 벌리는 동작과 확대한 사진을 끌어 옮기는 동작을 PageView
+                // 가 가로채 옆 사진으로 넘어갑니다.
+                physics: _pageLocked
+                    ? const NeverScrollableScrollPhysics()
+                    : const PageScrollPhysics(),
+                onPageChanged: (next) {
+                  setState(() => _index = next);
+                  // 끝에 가까워지면 다음 페이지를 미리 읽어 둡니다.
+                  if (next >= items.length - 5) {
+                    ref
+                        .read(photoListProvider(widget.query).notifier)
+                        .loadMore();
+                  }
                 },
+                itemBuilder: (context, i) => ZoomablePhoto(
+                  key: ValueKey(items[i].assetId),
+                  item: items[i],
+                  onZoomChanged: (zoomed) {
+                    if (zoomed != _zoomed) setState(() => _zoomed = zoomed);
+                  },
+                ),
               ),
             ),
           ),

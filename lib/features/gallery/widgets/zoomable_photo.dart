@@ -18,6 +18,11 @@ import 'package:photo_application/features/gallery/models/photo_item.dart';
 /// * 확대 중: 끌기를 켜고, [onZoomChanged] 로 바깥에 알려 페이지 넘김을
 ///   끄게 합니다.
 ///
+/// 다만 이것만으로는 **벌리는 동작의 시작**을 지키지 못합니다. 배율이
+/// 올라간 뒤에야 넘김이 꺼지므로, 핀치의 첫 순간은 늘 페이저와 경주가 되고
+/// 페이저가 이기면 확대가 아니라 옆 사진으로 넘어갑니다. 그래서 바깥(뷰어
+/// 화면)에서 **손가락이 두 개가 되는 순간** 넘김을 끕니다.
+///
 /// 확대한 동안에는 옆으로 넘길 수 없으므로, 페이지를 떠날 때는 늘 1배입니다.
 /// 되돌리는 처리를 따로 두지 않아도 되는 이유입니다.
 ///
@@ -44,6 +49,15 @@ class _ZoomablePhotoState extends State<ZoomablePhoto> {
 
   static const _doubleTapScale = 2.5;
   static const _maxScale = 6.0;
+
+  /// 1배보다 작게는 줄이지 않습니다.
+  ///
+  /// InteractiveViewer 의 기본값은 0.8 인데, 그대로 두면 두 손가락을 오므렸을
+  /// 때 사진이 화면에 맞는 크기보다 **작아진 채 멈춥니다**. 그 상태는 1배가
+  /// 아니지만 '확대 중'으로도 치지 않아(1.01 미만) 끌기도 꺼져 있어서,
+  /// 되돌릴 손짓이 남지 않습니다. 1 로 막으면 오므리는 동작이 정확히 '원래
+  /// 크기'에서 멈추고, 그때 페이지 넘김도 다시 켜집니다.
+  static const _minScale = 1.0;
 
   bool _zoomed = false;
   Offset _lastTapAt = Offset.zero;
@@ -104,6 +118,7 @@ class _ZoomablePhotoState extends State<ZoomablePhoto> {
       onDoubleTap: _onDoubleTap,
       child: InteractiveViewer(
         transformationController: _controller,
+        minScale: _minScale,
         maxScale: _maxScale,
         // 확대한 사진을 끝까지 끌어 볼 수 있게 여유를 무한으로 둡니다.
         // 0 이면 모서리가 화면 가장자리에 붙어 그 너머를 볼 수 없습니다.
